@@ -1,0 +1,3 @@
+[submodule "foundry-polygon-subscription-manager/lib/forge-std"]
+	path = foundry-polygon-subscription-manager/lib/forge-std
+	url = https://github.com/foundry-rs/forge-std
