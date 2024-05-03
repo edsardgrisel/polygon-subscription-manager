@@ -1,3 +1,6 @@
 [submodule "foundry-polygon-subscription-manager/lib/forge-std"]
 	path = foundry-polygon-subscription-manager/lib/forge-std
 	url = https://github.com/foundry-rs/forge-std
+[submodule "foundry-polygon-subscription-manager/lib/openzeppelin-contracts"]
+	path = foundry-polygon-subscription-manager/lib/openzeppelin-contracts
+	url = https://github.com/OpenZeppelin/openzeppelin-contracts
