@@ -2,13 +2,15 @@
 pragma solidity ^0.8.19;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 
 contract SubscriptionManager is Ownable {
     // State variables
     mapping(address admin => mapping(address user => Subscription)) private s_subscriptions; // the agreement between the admin and the user
     mapping(uint256 date => address[] usersToPayOnDate) private s_subscriptionsDue; // for each day in the future, there is a list of users that are required to pay on that day
     mapping(address => bool) private s_registeredUsers;
-    address private s_ethPriceFeed;
+    ERC20 public immutable stableCoin;
+    uint256 public immutable DECIMALS = 6;
 
     // Events
     event SubscriptionActivated(
@@ -63,8 +65,8 @@ contract SubscriptionManager is Ownable {
     }
 
     // Constructor
-    constructor(address ethPriceFeed) Ownable(msg.sender) {
-        s_ethPriceFeed = ethPriceFeed;
+    constructor(address _stableCoin) Ownable(msg.sender) {
+        stableCoin = ERC20(_stableCoin);
     }
 
     /**
@@ -187,9 +189,16 @@ contract SubscriptionManager is Ownable {
         );
     }
 
+    receive() external payable {} // to receive payments
+
     // Getters
-    function getEthPriceFeed() public view returns (address) {
-        return s_ethPriceFeed;
+
+    function getSubscriptionDue(address admin, uint256 date) public view returns (address[] memory) {
+        return s_subscriptionsDue[date];
+    }
+
+    function getstableCoin() public view returns (address) {
+        return address(stableCoin);
     }
 
     function getSubscription(address admin, address user) public view returns (Subscription memory) {
