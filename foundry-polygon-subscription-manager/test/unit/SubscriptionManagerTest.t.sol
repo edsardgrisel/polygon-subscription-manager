@@ -3,29 +3,32 @@ pragma solidity ^0.8.19;
 
 import {Test, console} from "forge-std/Test.sol";
 import {DeploySubscriptionManager} from "../../script/DeploySubscriptionManager.s.sol";
+import {DeployStableCoin} from "../../script/DeployStableCoin.s.sol";
 import {SubscriptionManager} from "../../src/SubscriptionManager.sol";
 import {HelperConfig} from "../../script/HelperConfig.s.sol";
+import {StableCoin} from "../../src/StableCoin.sol";
 
 contract SubscriptionManagerTest is Test {
     SubscriptionManager subscriptionManager;
+    StableCoin stableCoin;
     HelperConfig helperConfig;
 
     address admin = makeAddr("admin");
     address user = makeAddr("user");
 
-    uint256 price = 1 ether;
+    uint256 USDT_DECIMALS = 6;
+    uint256 price = 100 * 10 ** USDT_DECIMALS;
     uint256 paymentInterval = 30 days;
     uint256 duration = 90 days;
 
     function setUp() external {
         DeploySubscriptionManager deploySubscriptionManager = new DeploySubscriptionManager();
         (subscriptionManager, helperConfig) = deploySubscriptionManager.run();
-        vm.deal(user, 10 ether);
-    }
-
-    function testEthPriceFeedSetupInConstructor() public view {
-        (, address priceFeed) = helperConfig.activeNetworkConfig();
-        assert(subscriptionManager.getEthPriceFeed() == priceFeed);
+        DeployStableCoin deployStableCoin = new DeployStableCoin();
+        stableCoin = deployStableCoin.run();
+        vm.startPrank(user);
+        stableCoin.mint();
+        vm.stopPrank();
     }
 
     modifier userRegistered() {
@@ -33,6 +36,12 @@ contract SubscriptionManagerTest is Test {
         subscriptionManager.registerUser(user);
         vm.stopPrank();
         _;
+    }
+
+    // Setup
+
+    function testSetup() public {
+        assertEq(stableCoin.balanceOf(user), 100000 * 10 ** 6);
     }
 
     // createInactiveSubscription
@@ -119,7 +128,7 @@ contract SubscriptionManagerTest is Test {
         emit SubscriptionManager.SubscriptionActivated(
             admin, user, price, paymentInterval, block.timestamp, block.timestamp + duration
         );
-        subscriptionManager.activateSubscription{value: price}(admin);
+        subscriptionManager.activateSubscription(admin);
         vm.stopPrank();
 
         SubscriptionManager.Subscription memory subscription = subscriptionManager.getSubscription(admin, user);
@@ -130,11 +139,11 @@ contract SubscriptionManagerTest is Test {
     function testActivateSubscriptionAlreadyActive() public userRegistered inactiveSubscriptionCreated {
         vm.startPrank(user);
 
-        subscriptionManager.activateSubscription{value: price}(admin);
+        subscriptionManager.activateSubscription(admin);
         vm.expectRevert(
             abi.encodeWithSelector(SubscriptionManager.SubscriptionManager__SubscriptionAlreadyActive.selector)
         );
-        subscriptionManager.activateSubscription{value: price}(admin);
+        subscriptionManager.activateSubscription(admin);
         vm.stopPrank();
     }
 
@@ -144,7 +153,7 @@ contract SubscriptionManagerTest is Test {
         vm.expectRevert(
             abi.encodeWithSelector(SubscriptionManager.SubscriptionManager__SubscriptionPriceMismatch.selector)
         );
-        subscriptionManager.activateSubscription{value: price - 1}(admin);
+        subscriptionManager.activateSubscription(admin);
         vm.stopPrank();
     }
 
@@ -157,7 +166,7 @@ contract SubscriptionManagerTest is Test {
         subscriptionManager.createInactiveSubscription(price, paymentInterval, duration, user);
         vm.stopPrank();
         vm.startPrank(user);
-        subscriptionManager.activateSubscription{value: price}(admin);
+        subscriptionManager.activateSubscription(admin);
         vm.stopPrank();
         _;
     }
@@ -169,7 +178,7 @@ contract SubscriptionManagerTest is Test {
         vm.startPrank(user);
         vm.expectEmit(true, true, false, true);
         emit SubscriptionManager.PaymentMade(admin, user, price, nextPaymentTime + paymentInterval);
-        subscriptionManager.makePayment{value: price}(admin);
+        subscriptionManager.makePayment(admin);
         uint256 newNextPaymentTime = subscriptionManager.getSubscription(admin, user).nextPaymentTime;
 
         vm.stopPrank();
@@ -179,7 +188,7 @@ contract SubscriptionManagerTest is Test {
     function testMakePaymentSubscriptionNotActive() public userRegistered {
         vm.startPrank(user);
         vm.expectRevert(abi.encodeWithSelector(SubscriptionManager.SubscriptionManager__SubscriptionNotActive.selector));
-        subscriptionManager.makePayment{value: price}(admin);
+        subscriptionManager.makePayment(admin);
         vm.stopPrank();
     }
 
@@ -188,7 +197,14 @@ contract SubscriptionManagerTest is Test {
         vm.expectRevert(
             abi.encodeWithSelector(SubscriptionManager.SubscriptionManager__SubscriptionPriceMismatch.selector)
         );
-        subscriptionManager.makePayment{value: price - 1}(admin);
+        subscriptionManager.makePayment(admin);
         vm.stopPrank();
+    }
+
+    // calcualteFee
+
+    function testCalculateFee() public {
+        uint256 fee = subscriptionManager.calculateFee(price);
+        assertEq(fee, price / 100);
     }
 }

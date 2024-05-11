@@ -9,8 +9,12 @@ contract SubscriptionManager is Ownable {
     mapping(address admin => mapping(address user => Subscription)) private s_subscriptions; // the agreement between the admin and the user
     mapping(uint256 date => address[] usersToPayOnDate) private s_subscriptionsDue; // for each day in the future, there is a list of users that are required to pay on that day
     mapping(address => bool) private s_registeredUsers;
+    mapping(address admin => uint256 earnings) private s_adminsEarningsAfterFees;
+
     ERC20 public immutable stableCoin;
-    uint256 public immutable DECIMALS = 6;
+    uint256 public immutable USDT_DECIMALS = 6;
+    uint256 public immutable DECIMALS = 18;
+    uint256 public immutable FEE = 100; // Basis points 1.00%
 
     // Events
     event SubscriptionActivated(
@@ -87,7 +91,7 @@ contract SubscriptionManager is Ownable {
         Subscription memory newSubscription = Subscription({
             price: price,
             paymentInterval: paymentInterval,
-            startTime: 0, // all times are set to max value to indicate that the subscription has not started yet
+            startTime: 0, // all times are set to zero to indicate that the subscription has not started yet
             duration: duration,
             nextPaymentTime: 0,
             admin: admin,
@@ -124,14 +128,11 @@ contract SubscriptionManager is Ownable {
      * @dev Activate a subscription. This function is called by the user that is subscribing.
      * @param admin The admin of the subscription the user is subscribing to.
      */
-    function activateSubscription(address admin) public payable {
+    function activateSubscription(address admin) public isRegisteredUser(msg.sender) {
         Subscription memory subscription = s_subscriptions[admin][msg.sender];
 
         if (subscription.isActive == true) {
             revert SubscriptionManager__SubscriptionAlreadyActive();
-        }
-        if (msg.value != subscription.price) {
-            revert SubscriptionManager__SubscriptionPriceMismatch();
         }
 
         // Set times and activate the subscription
@@ -156,18 +157,18 @@ contract SubscriptionManager is Ownable {
             block.timestamp,
             block.timestamp + subscription.duration
         );
+        _updateAdminEarnings(admin, subscription.price);
+
+        stableCoin.transferFrom(msg.sender, admin, subscription.price);
 
         // chainlink function to call backend to send email to user with confirmation and next payment date
     }
 
-    function makePayment(address admin) public payable {
+    function makePayment(address admin) public {
         Subscription memory subscription = s_subscriptions[admin][msg.sender];
 
         if (subscription.isActive != true) {
             revert SubscriptionManager__SubscriptionNotActive();
-        }
-        if (msg.value != subscription.price) {
-            revert SubscriptionManager__SubscriptionPriceMismatch();
         }
 
         // Set times and activate the subscription
@@ -187,9 +188,23 @@ contract SubscriptionManager is Ownable {
         emit PaymentMade(
             newSubscription.admin, newSubscription.user, newSubscription.price, newSubscription.nextPaymentTime
         );
+        _updateAdminEarnings(admin, subscription.price);
+        stableCoin.transferFrom(msg.sender, admin, subscription.price);
     }
 
     receive() external payable {} // to receive payments
+
+    // amount: 10000000 (10 USDT)
+
+    function calculateFee(uint256 amount) public pure returns (uint256) {
+        // 1000 000000/ 100 = 100_000
+        return (amount * FEE) / 10000;
+    }
+
+    function _updateAdminEarnings(address admin, uint256 amount) private {
+        uint256 earningsAfterFees = amount - calculateFee(amount);
+        s_adminsEarningsAfterFees[admin] += earningsAfterFees;
+    }
 
     // Getters
 
