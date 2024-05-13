@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: SEE LICENSE IN LICENSE
 pragma solidity ^0.8.19;
 
+import {ERC20, IERC20Errors} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {Test, console} from "forge-std/Test.sol";
 import {DeploySubscriptionManager} from "../../script/DeploySubscriptionManager.s.sol";
 import {DeployStableCoin} from "../../script/DeployStableCoin.s.sol";
@@ -20,12 +21,14 @@ contract SubscriptionManagerTest is Test {
     uint256 price = 100 * 10 ** USDT_DECIMALS;
     uint256 paymentInterval = 30 days;
     uint256 duration = 90 days;
+    uint256 startingEthPrice = 2000;
 
     function setUp() external {
-        DeploySubscriptionManager deploySubscriptionManager = new DeploySubscriptionManager();
-        (subscriptionManager, helperConfig) = deploySubscriptionManager.run();
         DeployStableCoin deployStableCoin = new DeployStableCoin();
         stableCoin = deployStableCoin.run();
+        DeploySubscriptionManager deploySubscriptionManager = new DeploySubscriptionManager();
+        (subscriptionManager, helperConfig) = deploySubscriptionManager.run(address(stableCoin));
+
         vm.startPrank(user);
         stableCoin.mint();
         vm.stopPrank();
@@ -45,7 +48,7 @@ contract SubscriptionManagerTest is Test {
     }
 
     // createInactiveSubscription
-    function testCreateInactiveSubscription() public userRegistered {
+    function testCreateInactiveSubscriptionWorks() public userRegistered {
         vm.startPrank(admin);
 
         vm.expectEmit(true, true, false, true);
@@ -73,14 +76,14 @@ contract SubscriptionManagerTest is Test {
 
     // registerUser
 
-    function testRegisterUser() public {
+    function testRegisterUserWorks() public {
         vm.startPrank(subscriptionManager.owner());
         vm.expectEmit(true, false, false, false);
         emit SubscriptionManager.UserRegistered(user);
         subscriptionManager.registerUser(user);
         vm.stopPrank();
 
-        assert(subscriptionManager.getIsRegisteredUser(user));
+        assertTrue(subscriptionManager.getIsRegisteredUser(user));
     }
 
     function testRegisterAlreadyRegisteredUser() public userRegistered {
@@ -94,14 +97,14 @@ contract SubscriptionManagerTest is Test {
 
     // unregisterUser
 
-    function testUnregisterUser() public userRegistered {
+    function testUnregisterUserWorks() public userRegistered {
         vm.startPrank(subscriptionManager.owner());
         vm.expectEmit(true, false, false, false);
         emit SubscriptionManager.UserUnregistered(user);
         subscriptionManager.unregisterUser(user);
         vm.stopPrank();
 
-        assert(!subscriptionManager.getIsRegisteredUser(user));
+        assertTrue(!subscriptionManager.getIsRegisteredUser(user));
     }
 
     function testUnregisterUnregisteredUser() public {
@@ -113,7 +116,7 @@ contract SubscriptionManagerTest is Test {
         vm.stopPrank();
     }
 
-    // activateSubscription
+    // activateSubscriptionWithStableCoin
 
     modifier inactiveSubscriptionCreated() {
         vm.startPrank(admin);
@@ -122,89 +125,133 @@ contract SubscriptionManagerTest is Test {
         _;
     }
 
-    function testActivateSubscription() public userRegistered inactiveSubscriptionCreated {
+    function testActivateSubscriptionWithStableCoinWorks() public userRegistered inactiveSubscriptionCreated {
+        console.log("user sc balance: ", stableCoin.balanceOf(user));
+
         vm.startPrank(user);
+        stableCoin.approve(address(subscriptionManager), price);
+
         vm.expectEmit(true, true, false, true);
+
         emit SubscriptionManager.SubscriptionActivated(
             admin, user, price, paymentInterval, block.timestamp, block.timestamp + duration
         );
-        subscriptionManager.activateSubscription(admin);
+        subscriptionManager.activateSubscriptionWithStableCoin(admin);
         vm.stopPrank();
 
         SubscriptionManager.Subscription memory subscription = subscriptionManager.getSubscription(admin, user);
-        assert(subscription.isActive);
-        assertEq(subscription.price, address(subscriptionManager).balance);
+        assertTrue(subscription.isActive);
+        assertEq(subscription.price, stableCoin.balanceOf(address(subscriptionManager)));
     }
 
-    function testActivateSubscriptionAlreadyActive() public userRegistered inactiveSubscriptionCreated {
+    function testActivateSubscriptionWithStableCoinAlreadyActive() public userRegistered inactiveSubscriptionCreated {
         vm.startPrank(user);
+        stableCoin.approve(address(subscriptionManager), price);
 
-        subscriptionManager.activateSubscription(admin);
+        subscriptionManager.activateSubscriptionWithStableCoin(admin);
+        stableCoin.approve(address(subscriptionManager), price);
+
         vm.expectRevert(
             abi.encodeWithSelector(SubscriptionManager.SubscriptionManager__SubscriptionAlreadyActive.selector)
         );
-        subscriptionManager.activateSubscription(admin);
+        subscriptionManager.activateSubscriptionWithStableCoin(admin);
         vm.stopPrank();
     }
 
-    function testActivateSubscriptionPriceMismatch() public userRegistered inactiveSubscriptionCreated {
+    function testActivateSubscriptionWithStableCoinInsufficientAllowance()
+        public
+        userRegistered
+        inactiveSubscriptionCreated
+    {
         vm.startPrank(user);
+        stableCoin.approve(address(subscriptionManager), price - 1);
+
+        // ...
 
         vm.expectRevert(
-            abi.encodeWithSelector(SubscriptionManager.SubscriptionManager__SubscriptionPriceMismatch.selector)
+            abi.encodeWithSelector(
+                IERC20Errors.ERC20InsufficientAllowance.selector, subscriptionManager, price - 1, price
+            )
         );
-        subscriptionManager.activateSubscription(admin);
+        subscriptionManager.activateSubscriptionWithStableCoin(admin);
         vm.stopPrank();
     }
 
     function testChainlinkFunction() public { /* TODO */ }
 
-    // makePayment
+    // makePaymentWithStableCoin
 
     modifier subcriptionActive() {
         vm.startPrank(admin);
         subscriptionManager.createInactiveSubscription(price, paymentInterval, duration, user);
         vm.stopPrank();
         vm.startPrank(user);
-        subscriptionManager.activateSubscription(admin);
+        stableCoin.approve(address(subscriptionManager), price);
+        subscriptionManager.activateSubscriptionWithStableCoin(admin);
         vm.stopPrank();
         _;
     }
 
-    function testMakePayment() public userRegistered subcriptionActive {
+    function testMakePaymentWithStableCoinWorks() public userRegistered subcriptionActive {
         uint256 nextPaymentTime = subscriptionManager.getSubscription(admin, user).nextPaymentTime;
         uint256 startTime = subscriptionManager.getSubscription(admin, user).startTime;
 
         vm.startPrank(user);
+        stableCoin.approve(address(subscriptionManager), price);
+
         vm.expectEmit(true, true, false, true);
         emit SubscriptionManager.PaymentMade(admin, user, price, nextPaymentTime + paymentInterval);
-        subscriptionManager.makePayment(admin);
+
+        subscriptionManager.makePaymentWithStableCoin(admin);
         uint256 newNextPaymentTime = subscriptionManager.getSubscription(admin, user).nextPaymentTime;
 
         vm.stopPrank();
         assertEq(startTime + 2 * paymentInterval, newNextPaymentTime);
     }
 
-    function testMakePaymentSubscriptionNotActive() public userRegistered {
+    function testMakePaymentSubscriptionWithStableCoinNotActive() public userRegistered {
         vm.startPrank(user);
+        stableCoin.approve(address(subscriptionManager), price);
         vm.expectRevert(abi.encodeWithSelector(SubscriptionManager.SubscriptionManager__SubscriptionNotActive.selector));
-        subscriptionManager.makePayment(admin);
+        subscriptionManager.makePaymentWithStableCoin(admin);
         vm.stopPrank();
     }
 
-    function testMakePaymentPriceMismatch() public userRegistered subcriptionActive {
+    function testMakePaymentWithStableCoinInsufficientAllowance() public userRegistered subcriptionActive {
         vm.startPrank(user);
+        stableCoin.approve(address(subscriptionManager), price - 1);
         vm.expectRevert(
-            abi.encodeWithSelector(SubscriptionManager.SubscriptionManager__SubscriptionPriceMismatch.selector)
+            abi.encodeWithSelector(
+                IERC20Errors.ERC20InsufficientAllowance.selector, subscriptionManager, price - 1, price
+            )
         );
-        subscriptionManager.makePayment(admin);
+        subscriptionManager.makePaymentWithStableCoin(admin);
         vm.stopPrank();
     }
 
     // calcualteFee
 
     function testCalculateFee() public {
-        uint256 fee = subscriptionManager.calculateFee(price);
+        uint256 fee = subscriptionManager.calculateUsdFee(price);
         assertEq(fee, price / 100);
+    }
+
+    // Internal functions testing
+    function testGetEthAmountFromUsd() public {
+        (, address ethPriceFeed) = helperConfig.activeNetworkConfig();
+        SubscriptionManagerHarness subscriptionManagerHarness = new SubscriptionManagerHarness(stableCoin, ethPriceFeed);
+        uint256 usdAmount = 10e18; // $10
+        uint256 ethAmount = subscriptionManagerHarness.getEthAmountFromUsd_HARNESS(usdAmount);
+        assertEq(ethAmount, 10e18 / startingEthPrice);
+    }
+
+    function testHandleStableCoinPayment() public {}
+}
+
+contract SubscriptionManagerHarness is SubscriptionManager {
+    constructor(StableCoin _acceptedToken, address _ethPriceFeed) SubscriptionManager(_acceptedToken, _ethPriceFeed) {}
+
+    function getEthAmountFromUsd_HARNESS(uint256 _usdAmount) external view returns (uint256) {
+        return super._getEthAmountFromUsd(_usdAmount);
     }
 }

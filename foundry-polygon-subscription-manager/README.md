@@ -23,3 +23,9 @@ This is a dapp that allows admins to manage their subscriptions and view analyti
         -   Update their subscription plan.
         -   Delete their subscription plan.
 - **User**: Entity that is using our service to subscribe to an admin's service.
+
+
+### chainlink products used
+- Will use **chainlink automation** to check if payments were made on time and if not the plan is set to innactive.
+- Will use **chainlink functions** to inform backend on what email to send to a user or admin.
+- (Potentially) will use **chainlink price feeds** to get the price of the subscription plan in ETH.

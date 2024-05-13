@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: SEE LICENSE IN LICENSE
 pragma solidity ^0.8.19;
 
-import "@openzeppelin/contracts/access/Ownable.sol";
-import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
+import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import {AggregatorV3Interface} from "@chainlink/contracts/src/v0.8/interfaces/AggregatorV3Interface.sol";
 
 contract SubscriptionManager is Ownable {
     // State variables
@@ -11,10 +12,13 @@ contract SubscriptionManager is Ownable {
     mapping(address => bool) private s_registeredUsers;
     mapping(address admin => uint256 earnings) private s_adminsEarningsAfterFees;
 
-    ERC20 public immutable stableCoin;
+    ERC20 public acceptedToken;
+    AggregatorV3Interface public immutable wethPriceFeed;
     uint256 public immutable USDT_DECIMALS = 6;
     uint256 public immutable DECIMALS = 18;
+    uint256 public immutable PRICE_FEED_DECIMALS = 8;
     uint256 public immutable FEE = 100; // Basis points 1.00%
+    uint256 public immutable FLAT_USD_FEE = 0; // zero for now. may be added later
 
     // Events
     event SubscriptionActivated(
@@ -39,11 +43,13 @@ contract SubscriptionManager is Ownable {
     error SubscriptionManager__SubscriptionPriceMismatch();
     error SubscriptionManager__UserNotRegistered(address user);
     error SubscriptionManager__UserAlreadyRegistered(address user);
+    error SubscriptionManager__TokenNotAccepted(address tokenAddress);
+    error SubscriptionManager__NoInactiveSubscriptionFound(address user);
 
     // Structs
 
     struct Subscription {
-        uint256 price;
+        uint256 price; // in usd with 18 decimals
         uint256 paymentInterval;
         uint256 startTime;
         uint256 duration;
@@ -69,8 +75,9 @@ contract SubscriptionManager is Ownable {
     }
 
     // Constructor
-    constructor(address _stableCoin) Ownable(msg.sender) {
-        stableCoin = ERC20(_stableCoin);
+    constructor(ERC20 _acceptedToken, address _wethPriceFeed) Ownable(msg.sender) {
+        acceptedToken = _acceptedToken;
+        wethPriceFeed = AggregatorV3Interface(_wethPriceFeed);
     }
 
     /**
@@ -124,12 +131,62 @@ contract SubscriptionManager is Ownable {
         emit UserUnregistered(user);
     }
 
+    function activateSubscriptionWithEther(address admin) public payable isNotRegisteredUser(msg.sender) {
+        Subscription memory subscription = s_subscriptions[admin][msg.sender];
+
+        if (subscription.admin == address(0)) {
+            revert SubscriptionManager__NoInactiveSubscriptionFound(msg.sender);
+        }
+
+        if (subscription.isActive == true) {
+            revert SubscriptionManager__SubscriptionAlreadyActive();
+        }
+
+        uint256 ethAmount = _getEthAmountFromUsd(subscription.price);
+
+        if (msg.value != ethAmount) {
+            revert SubscriptionManager__SubscriptionPriceMismatch();
+        }
+
+        // Set times and activate the subscription
+        Subscription memory newSubscription = Subscription({
+            price: subscription.price,
+            paymentInterval: subscription.paymentInterval,
+            startTime: block.timestamp,
+            duration: block.timestamp + subscription.duration,
+            nextPaymentTime: block.timestamp + subscription.paymentInterval,
+            admin: subscription.admin,
+            user: subscription.user,
+            isActive: true
+        });
+        s_subscriptions[subscription.admin][subscription.user] = newSubscription;
+
+        // emit event
+        emit SubscriptionActivated(
+            subscription.admin,
+            subscription.user,
+            subscription.price,
+            subscription.paymentInterval,
+            block.timestamp,
+            block.timestamp + subscription.duration
+        );
+        _updateAdminEthEarnings(admin, ethAmount);
+
+        // chainlink function to call backend to send email to user with confirmation and next payment date
+    }
+
     /**
      * @dev Activate a subscription. This function is called by the user that is subscribing.
+     * The user will pay for the first subscription period. Approval for the payment must be given before calling this function.
+     * Non ether Token must be accepted by the contract.
      * @param admin The admin of the subscription the user is subscribing to.
      */
-    function activateSubscription(address admin) public isRegisteredUser(msg.sender) {
+    function activateSubscriptionWithStableCoin(address admin) public isRegisteredUser(msg.sender) {
         Subscription memory subscription = s_subscriptions[admin][msg.sender];
+
+        if (subscription.admin == address(0)) {
+            revert SubscriptionManager__NoInactiveSubscriptionFound(msg.sender);
+        }
 
         if (subscription.isActive == true) {
             revert SubscriptionManager__SubscriptionAlreadyActive();
@@ -157,14 +214,51 @@ contract SubscriptionManager is Ownable {
             block.timestamp,
             block.timestamp + subscription.duration
         );
-        _updateAdminEarnings(admin, subscription.price);
-
-        stableCoin.transferFrom(msg.sender, admin, subscription.price);
+        _updateAdminUsdEarnings(admin, subscription.price);
+        _handleStableCoinPayment(msg.sender, subscription.price);
 
         // chainlink function to call backend to send email to user with confirmation and next payment date
     }
 
-    function makePayment(address admin) public {
+    function makePaymentWithEth(address admin) public payable {
+        Subscription memory subscription = s_subscriptions[admin][msg.sender];
+
+        if (subscription.isActive != true) {
+            revert SubscriptionManager__SubscriptionNotActive();
+        }
+
+        uint256 ethAmount = _getEthAmountFromUsd(subscription.price);
+
+        if (msg.value != ethAmount) {
+            revert SubscriptionManager__SubscriptionPriceMismatch();
+        }
+
+        // Set times and activate the subscription
+        Subscription memory newSubscription = Subscription({
+            price: subscription.price,
+            paymentInterval: subscription.paymentInterval,
+            startTime: subscription.startTime, // all times are set to max value to indicate that the subscription has not started yet
+            duration: subscription.duration,
+            nextPaymentTime: subscription.nextPaymentTime + subscription.paymentInterval,
+            admin: subscription.admin,
+            user: subscription.user,
+            isActive: true
+        });
+        s_subscriptions[subscription.admin][subscription.user] = newSubscription;
+
+        // emit event
+        emit PaymentMade(
+            newSubscription.admin, newSubscription.user, newSubscription.price, newSubscription.nextPaymentTime
+        );
+        _updateAdminEthEarnings(admin, ethAmount);
+    }
+
+    /**
+     * @dev Make a payment for a subscription. This function is called by the user that is subscribing.
+     * The user will pay for the next subscription period. Approval for the payment must be given before calling this function.
+     * @param admin The admin of the subscription the user is subscribing to.
+     */
+    function makePaymentWithStableCoin(address admin) public {
         Subscription memory subscription = s_subscriptions[admin][msg.sender];
 
         if (subscription.isActive != true) {
@@ -188,22 +282,53 @@ contract SubscriptionManager is Ownable {
         emit PaymentMade(
             newSubscription.admin, newSubscription.user, newSubscription.price, newSubscription.nextPaymentTime
         );
-        _updateAdminEarnings(admin, subscription.price);
-        stableCoin.transferFrom(msg.sender, admin, subscription.price);
+        _updateAdminUsdEarnings(admin, subscription.price);
+        _handleStableCoinPayment(msg.sender, subscription.price);
     }
 
     receive() external payable {} // to receive payments
 
     // amount: 10000000 (10 USDT)
 
-    function calculateFee(uint256 amount) public pure returns (uint256) {
+    function calculateUsdFee(uint256 amount) public pure returns (uint256) {
         // 1000 000000/ 100 = 100_000
-        return (amount * FEE) / 10000;
+        uint256 percentFee = (amount * FEE) / 10000;
+        return percentFee + FLAT_USD_FEE;
     }
 
-    function _updateAdminEarnings(address admin, uint256 amount) private {
-        uint256 earningsAfterFees = amount - calculateFee(amount);
+    function calculateEthFee(uint256 amount) public returns (uint256) {
+        // 1000 000000/ 100 = 100_000
+        uint256 percentFee = (amount * FEE) / 10000;
+        uint256 ethFee = _getEthAmountFromUsd(FLAT_USD_FEE);
+        return percentFee + ethFee;
+    }
+
+    // internal functions
+
+    function _updateAdminUsdEarnings(address admin, uint256 amount) internal {
+        uint256 earningsAfterFees = amount - calculateUsdFee(amount);
         s_adminsEarningsAfterFees[admin] += earningsAfterFees;
+    }
+
+    function _updateAdminEthEarnings(address admin, uint256 amount) internal {
+        uint256 earningsAfterFees = amount - calculateEthFee(amount);
+        s_adminsEarningsAfterFees[admin] += earningsAfterFees;
+    }
+
+    function _handleStableCoinPayment(address from, uint256 amount /* in usd with 18 decimals */ ) internal {
+        uint256 usdtAmount = amount / (10 ** (DECIMALS - USDT_DECIMALS));
+        acceptedToken.transferFrom(from, address(this), usdtAmount);
+    }
+
+    function _handleEthPayment(address from, address to, uint256 amount /* in usd with 18 decimals */ ) internal {
+        uint256 wethAmount = _getEthAmountFromUsd(amount);
+        // TODO
+    }
+
+    function _getEthAmountFromUsd(uint256 amount) internal view returns (uint256) {
+        (, int256 price,,,) = wethPriceFeed.latestRoundData(); // e.g $1000 would return 1000.00000000
+        uint256 price18Decimals = uint256(price) * (10 ** (DECIMALS - PRICE_FEED_DECIMALS));
+        return (amount * 1e18) / uint256(price18Decimals);
     }
 
     // Getters
@@ -212,8 +337,8 @@ contract SubscriptionManager is Ownable {
         return s_subscriptionsDue[date];
     }
 
-    function getstableCoin() public view returns (address) {
-        return address(stableCoin);
+    function getstableCoinAddress() public view returns (address) {
+        return address(acceptedToken);
     }
 
     function getSubscription(address admin, address user) public view returns (Subscription memory) {

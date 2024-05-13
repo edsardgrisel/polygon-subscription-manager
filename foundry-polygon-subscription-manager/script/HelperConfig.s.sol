@@ -12,7 +12,7 @@ contract HelperConfig is Script {
 
     struct NetworkConfig {
         uint256 deployerKey;
-        address priceFeed;
+        address ethPriceFeed;
     }
 
     event HelperConfig__CreatedMockPriceFeed(address priceFeed);
@@ -28,13 +28,13 @@ contract HelperConfig is Script {
     function getCardonaEthConfig() public view returns (NetworkConfig memory cardonaNetworkConfig) {
         cardonaNetworkConfig = NetworkConfig({
             deployerKey: vm.envUint("ZKEVM_TESTNET_PRIVATE_KEY"),
-            priceFeed: 0xd94522a6feF7779f672f4C88eb672da9222f2eAc
+            ethPriceFeed: vm.envAddress("ZKEVM_TESTNET_ETHUSD_PRICE_FEED")
         });
     }
 
     function getOrCreateAnvilEthConfig() public returns (NetworkConfig memory anvilNetworkConfig) {
         // Check to see if we set an active network config
-        if (activeNetworkConfig.priceFeed != address(0)) {
+        if (activeNetworkConfig.ethPriceFeed != address(0)) {
             return activeNetworkConfig;
         }
         vm.startBroadcast();
@@ -43,6 +43,6 @@ contract HelperConfig is Script {
         emit HelperConfig__CreatedMockPriceFeed(address(mockPriceFeed));
 
         anvilNetworkConfig =
-            NetworkConfig({deployerKey: vm.envUint("ANVIL_PRIVATE_KEY_ZERO"), priceFeed: address(mockPriceFeed)});
+            NetworkConfig({deployerKey: vm.envUint("ANVIL_PRIVATE_KEY_ZERO"), ethPriceFeed: address(mockPriceFeed)});
     }
 }
