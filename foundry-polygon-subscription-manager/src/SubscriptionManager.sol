@@ -337,9 +337,15 @@ contract SubscriptionManager is Ownable {
         if (ethAmount > earnings) {
             ethAmount = earnings;
         }
+        s_totalEthFeesEarnings -= ethAmount;
         s_adminsEthEarningsAfterFees[msg.sender] = earnings - ethAmount;
-        payable(msg.sender).transfer(ethAmount);
         emit OwnerEthFeesWithdrawalSuccessful(msg.sender, ethAmount);
+
+        bool success = payable(msg.sender).send(ethAmount);
+        // In theory should never fail, but just in case
+        if (!success) {
+            revert SubscriptionManager__WithdrawFailed();
+        }
     }
 
     /**
@@ -351,9 +357,11 @@ contract SubscriptionManager is Ownable {
         if (usdAmount > earnings) {
             usdAmount = earnings;
         }
+        s_totalUsdFeesEarnings -= usdAmount;
         s_adminsUsdEarningsAfterFees[msg.sender] = earnings - usdAmount;
-        acceptedToken.transfer(msg.sender, usdAmount);
         emit OwnerUsdFeesWithdrawalSuccessful(msg.sender, usdAmount);
+        uint256 usdAmount6Decimals = usdAmount / (10 ** (DECIMALS - USDT_DECIMALS));
+        acceptedToken.transfer(msg.sender, usdAmount6Decimals);
     }
 
     function cancelSubscription(address admin) public isRegisteredUser(msg.sender) {
