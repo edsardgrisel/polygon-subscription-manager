@@ -29,3 +29,7 @@ This is a dapp that allows admins to manage their subscriptions and view analyti
 - Will use **chainlink automation** to check if payments were made on time and if not the plan is set to innactive.
 - Will use **chainlink functions** to inform backend on what email to send to a user or admin.
 - (Potentially) will use **chainlink price feeds** to get the price of the subscription plan in ETH.
+
+
+### Extras
+All usd values are with 18 decimals. They are only ever converted to 6 decimals when handling transfers of usdt

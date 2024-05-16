@@ -4,13 +4,17 @@ pragma solidity ^0.8.19;
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {AggregatorV3Interface} from "@chainlink/contracts/src/v0.8/interfaces/AggregatorV3Interface.sol";
+import {Test, console} from "forge-std/Test.sol";
 
 contract SubscriptionManager is Ownable {
     // State variables
     mapping(address admin => mapping(address user => Subscription)) private s_subscriptions; // the agreement between the admin and the user
     mapping(uint256 date => address[] usersToPayOnDate) private s_subscriptionsDue; // for each day in the future, there is a list of users that are required to pay on that day
     mapping(address => bool) private s_registeredUsers;
-    mapping(address admin => uint256 earnings) private s_adminsEarningsAfterFees;
+    mapping(address admin => uint256 usdEarnings) private s_adminsUsdEarningsAfterFees;
+    mapping(address admin => uint256 ethEarnings) private s_adminsEthEarningsAfterFees;
+    uint256 private s_totalUsdFeesEarnings;
+    uint256 private s_totalEthFeesEarnings;
 
     ERC20 public acceptedToken;
     AggregatorV3Interface public immutable wethPriceFeed;
@@ -29,13 +33,17 @@ contract SubscriptionManager is Ownable {
         uint256 startTime,
         uint256 endTime
     );
-
     event PaymentMade(address indexed admin, address indexed user, uint256 price, uint256 nextPaymentTime);
     event InactiveSubscriptionCreated(
         address indexed admin, address indexed user, uint256 price, uint256 paymentInterval, uint256 duration
     );
     event UserRegistered(address indexed user);
     event UserUnregistered(address indexed user);
+    event SubscriptionCanceled(address indexed admin, address indexed user);
+    event AdminEthWithdrawalSuccessful(address indexed admin, uint256 amount);
+    event AdminUsdWithdrawalSuccessful(address indexed admin, uint256 amount);
+    event OwnerEthFeesWithdrawalSuccessful(address indexed owner, uint256 amount);
+    event OwnerUsdFeesWithdrawalSuccessful(address indexed owner, uint256 amount);
 
     // Errors
     error SubscriptionManager__SubscriptionAlreadyActive();
@@ -45,6 +53,7 @@ contract SubscriptionManager is Ownable {
     error SubscriptionManager__UserAlreadyRegistered(address user);
     error SubscriptionManager__TokenNotAccepted(address tokenAddress);
     error SubscriptionManager__NoInactiveSubscriptionFound(address user);
+    error SubscriptionManager__WithdrawFailed();
 
     // Structs
 
@@ -131,7 +140,7 @@ contract SubscriptionManager is Ownable {
         emit UserUnregistered(user);
     }
 
-    function activateSubscriptionWithEther(address admin) public payable isNotRegisteredUser(msg.sender) {
+    function activateSubscriptionWithEth(address admin) public payable isRegisteredUser(msg.sender) {
         Subscription memory subscription = s_subscriptions[admin][msg.sender];
 
         if (subscription.admin == address(0)) {
@@ -220,7 +229,7 @@ contract SubscriptionManager is Ownable {
         // chainlink function to call backend to send email to user with confirmation and next payment date
     }
 
-    function makePaymentWithEth(address admin) public payable {
+    function makePaymentWithEth(address admin) public payable isRegisteredUser(msg.sender) {
         Subscription memory subscription = s_subscriptions[admin][msg.sender];
 
         if (subscription.isActive != true) {
@@ -258,7 +267,7 @@ contract SubscriptionManager is Ownable {
      * The user will pay for the next subscription period. Approval for the payment must be given before calling this function.
      * @param admin The admin of the subscription the user is subscribing to.
      */
-    function makePaymentWithStableCoin(address admin) public {
+    function makePaymentWithStableCoin(address admin) public isRegisteredUser(msg.sender) {
         Subscription memory subscription = s_subscriptions[admin][msg.sender];
 
         if (subscription.isActive != true) {
@@ -286,6 +295,71 @@ contract SubscriptionManager is Ownable {
         _handleStableCoinPayment(msg.sender, subscription.price);
     }
 
+    function withdrawAdminEthEarnings(uint256 amount) public {
+        uint256 earnings = s_adminsEthEarningsAfterFees[msg.sender];
+        if (amount > earnings) {
+            amount = earnings;
+        }
+        s_adminsEthEarningsAfterFees[msg.sender] = earnings - amount;
+
+        emit AdminEthWithdrawalSuccessful(msg.sender, amount);
+
+        bool success = payable(msg.sender).send(amount);
+        if (!success) {
+            revert SubscriptionManager__WithdrawFailed();
+        }
+    }
+
+    function withdrawAdminUsdEarnings(uint256 amount) public {
+        uint256 earnings = s_adminsUsdEarningsAfterFees[msg.sender];
+        if (amount > earnings) {
+            amount = earnings;
+        }
+        s_adminsUsdEarningsAfterFees[msg.sender] = earnings - amount;
+        bool success = acceptedToken.transfer(msg.sender, amount);
+        if (!success) {
+            revert SubscriptionManager__WithdrawFailed();
+        }
+        emit AdminUsdWithdrawalSuccessful(msg.sender, amount);
+    }
+
+    /**
+     * @dev Withdraw the earnings of the admin in ETH. This function is called by the owner of the contract.
+     * @param ethAmount The amount of ETH to withdraw. If this is more than the fee earnings, all earnings will be withdrawn.
+     */
+    function withdrawOwnerEthFeesEarnings(uint256 ethAmount) public onlyOwner {
+        uint256 earnings = s_totalEthFeesEarnings;
+        if (ethAmount > earnings) {
+            ethAmount = earnings;
+        }
+        s_adminsEthEarningsAfterFees[msg.sender] = earnings - ethAmount;
+        payable(msg.sender).transfer(ethAmount);
+        emit OwnerEthFeesWithdrawalSuccessful(msg.sender, ethAmount);
+    }
+
+    /**
+     * @dev Withdraw the earnings of the admin in USD. This function is called by the owner of the contract.
+     * @param usdAmount The amount to withdraw. If this is more than the fee earnings, all earnings will be withdrawn.
+     */
+    function withdrawOwnerUsdFeesEarnings(uint256 usdAmount) public onlyOwner {
+        uint256 earnings = s_totalUsdFeesEarnings;
+        if (usdAmount > earnings) {
+            usdAmount = earnings;
+        }
+        s_adminsUsdEarningsAfterFees[msg.sender] = earnings - usdAmount;
+        acceptedToken.transfer(msg.sender, usdAmount);
+        emit OwnerUsdFeesWithdrawalSuccessful(msg.sender, usdAmount);
+    }
+
+    function cancelSubscription(address admin) public isRegisteredUser(msg.sender) {
+        Subscription memory subscription = s_subscriptions[admin][msg.sender];
+        if (subscription.isActive != true) {
+            revert SubscriptionManager__SubscriptionNotActive();
+        }
+        s_subscriptions[admin][msg.sender].isActive = false;
+        emit SubscriptionCanceled(admin, msg.sender);
+    }
+
     receive() external payable {} // to receive payments
 
     // amount: 10000000 (10 USDT)
@@ -306,23 +380,22 @@ contract SubscriptionManager is Ownable {
     // internal functions
 
     function _updateAdminUsdEarnings(address admin, uint256 amount) internal {
+        uint256 fee = calculateUsdFee(amount);
+        s_totalUsdFeesEarnings += fee;
         uint256 earningsAfterFees = amount - calculateUsdFee(amount);
-        s_adminsEarningsAfterFees[admin] += earningsAfterFees;
+        s_adminsUsdEarningsAfterFees[admin] += earningsAfterFees;
     }
 
     function _updateAdminEthEarnings(address admin, uint256 amount) internal {
+        uint256 fee = calculateEthFee(amount);
+        s_totalEthFeesEarnings += fee;
         uint256 earningsAfterFees = amount - calculateEthFee(amount);
-        s_adminsEarningsAfterFees[admin] += earningsAfterFees;
+        s_adminsEthEarningsAfterFees[admin] += earningsAfterFees;
     }
 
     function _handleStableCoinPayment(address from, uint256 amount /* in usd with 18 decimals */ ) internal {
         uint256 usdtAmount = amount / (10 ** (DECIMALS - USDT_DECIMALS));
         acceptedToken.transferFrom(from, address(this), usdtAmount);
-    }
-
-    function _handleEthPayment(address from, address to, uint256 amount /* in usd with 18 decimals */ ) internal {
-        uint256 wethAmount = _getEthAmountFromUsd(amount);
-        // TODO
     }
 
     function _getEthAmountFromUsd(uint256 amount) internal view returns (uint256) {
@@ -347,5 +420,29 @@ contract SubscriptionManager is Ownable {
 
     function getIsRegisteredUser(address user) public view returns (bool) {
         return s_registeredUsers[user];
+    }
+
+    function getAdminsEthEarningsAfterFees(address admin) public view returns (uint256) {
+        return s_adminsEthEarningsAfterFees[admin];
+    }
+
+    function getAdminsUsdEarningsAfterFees(address admin) public view returns (uint256) {
+        return s_adminsUsdEarningsAfterFees[admin];
+    }
+
+    function getFlatUsdFee() public view returns (uint256) {
+        return FLAT_USD_FEE;
+    }
+
+    function getPercentFee() public view returns (uint256) {
+        return FEE;
+    }
+
+    function getTotalUsdFeesEarnings() public view returns (uint256) {
+        return s_totalUsdFeesEarnings;
+    }
+
+    function getTotalEthFeesEarnings() public view returns (uint256) {
+        return s_totalEthFeesEarnings;
     }
 }

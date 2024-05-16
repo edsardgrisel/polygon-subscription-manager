@@ -13,15 +13,18 @@ contract SubscriptionManagerTest is Test {
     SubscriptionManager subscriptionManager;
     StableCoin stableCoin;
     HelperConfig helperConfig;
+    SubscriptionManagerHarness subscriptionManagerHarness;
 
     address admin = makeAddr("admin");
     address user = makeAddr("user");
 
     uint256 USDT_DECIMALS = 6;
-    uint256 price = 100 * 10 ** USDT_DECIMALS;
+    uint256 priceInUsd = 100e18; //100 USD with 18 decimals
+    uint256 priceInUsd6Decimals = priceInUsd / 10 ** 12; // 100 USD with 6 decimals
+
     uint256 paymentInterval = 30 days;
     uint256 duration = 90 days;
-    uint256 startingEthPrice = 2000;
+    uint256 startingEthPriceInUsd = 2000e18; // 2000 USD with 18 decimals
 
     function setUp() external {
         DeployStableCoin deployStableCoin = new DeployStableCoin();
@@ -32,6 +35,8 @@ contract SubscriptionManagerTest is Test {
         vm.startPrank(user);
         stableCoin.mint();
         vm.stopPrank();
+
+        vm.deal(user, 10 ether);
     }
 
     modifier userRegistered() {
@@ -52,13 +57,13 @@ contract SubscriptionManagerTest is Test {
         vm.startPrank(admin);
 
         vm.expectEmit(true, true, false, true);
-        emit SubscriptionManager.InactiveSubscriptionCreated(admin, user, price, paymentInterval, duration);
-        subscriptionManager.createInactiveSubscription(price, paymentInterval, duration, user);
+        emit SubscriptionManager.InactiveSubscriptionCreated(admin, user, priceInUsd, paymentInterval, duration);
+        subscriptionManager.createInactiveSubscription(priceInUsd, paymentInterval, duration, user);
 
         vm.stopPrank();
 
         SubscriptionManager.Subscription memory subscription = subscriptionManager.getSubscription(admin, user);
-        assertEq(subscription.price, price);
+        assertEq(subscription.price, priceInUsd);
         assertEq(subscription.paymentInterval, paymentInterval);
         assertEq(subscription.duration, duration);
         assertEq(subscription.isActive, false);
@@ -70,7 +75,7 @@ contract SubscriptionManagerTest is Test {
             abi.encodeWithSelector(SubscriptionManager.SubscriptionManager__UserNotRegistered.selector, user)
         );
 
-        subscriptionManager.createInactiveSubscription(price, paymentInterval, duration, user);
+        subscriptionManager.createInactiveSubscription(priceInUsd, paymentInterval, duration, user);
         vm.stopPrank();
     }
 
@@ -120,36 +125,40 @@ contract SubscriptionManagerTest is Test {
 
     modifier inactiveSubscriptionCreated() {
         vm.startPrank(admin);
-        subscriptionManager.createInactiveSubscription(price, paymentInterval, duration, user);
+        subscriptionManager.createInactiveSubscription(priceInUsd, paymentInterval, duration, user);
         vm.stopPrank();
         _;
     }
 
     function testActivateSubscriptionWithStableCoinWorks() public userRegistered inactiveSubscriptionCreated {
-        console.log("user sc balance: ", stableCoin.balanceOf(user));
-
         vm.startPrank(user);
-        stableCoin.approve(address(subscriptionManager), price);
+
+        stableCoin.approve(address(subscriptionManager), priceInUsd6Decimals);
 
         vm.expectEmit(true, true, false, true);
 
         emit SubscriptionManager.SubscriptionActivated(
-            admin, user, price, paymentInterval, block.timestamp, block.timestamp + duration
+            admin, user, priceInUsd, paymentInterval, block.timestamp, block.timestamp + duration
         );
         subscriptionManager.activateSubscriptionWithStableCoin(admin);
         vm.stopPrank();
 
         SubscriptionManager.Subscription memory subscription = subscriptionManager.getSubscription(admin, user);
         assertTrue(subscription.isActive);
-        assertEq(subscription.price, stableCoin.balanceOf(address(subscriptionManager)));
+        assertEq(
+            subscriptionManager.getAdminsUsdEarningsAfterFees(admin),
+            priceInUsd - subscriptionManager.calculateUsdFee(priceInUsd)
+        );
+        assertEq(subscriptionManager.getTotalUsdFeesEarnings(), subscriptionManager.calculateUsdFee(priceInUsd));
+        assertEq(stableCoin.balanceOf(address(subscriptionManager)), priceInUsd6Decimals);
     }
 
     function testActivateSubscriptionWithStableCoinAlreadyActive() public userRegistered inactiveSubscriptionCreated {
         vm.startPrank(user);
-        stableCoin.approve(address(subscriptionManager), price);
+        stableCoin.approve(address(subscriptionManager), priceInUsd);
 
         subscriptionManager.activateSubscriptionWithStableCoin(admin);
-        stableCoin.approve(address(subscriptionManager), price);
+        stableCoin.approve(address(subscriptionManager), priceInUsd);
 
         vm.expectRevert(
             abi.encodeWithSelector(SubscriptionManager.SubscriptionManager__SubscriptionAlreadyActive.selector)
@@ -164,13 +173,16 @@ contract SubscriptionManagerTest is Test {
         inactiveSubscriptionCreated
     {
         vm.startPrank(user);
-        stableCoin.approve(address(subscriptionManager), price - 1);
+        stableCoin.approve(address(subscriptionManager), priceInUsd6Decimals - 1);
 
         // ...
 
         vm.expectRevert(
             abi.encodeWithSelector(
-                IERC20Errors.ERC20InsufficientAllowance.selector, subscriptionManager, price - 1, price
+                IERC20Errors.ERC20InsufficientAllowance.selector,
+                subscriptionManager,
+                priceInUsd6Decimals - 1,
+                priceInUsd6Decimals
             )
         );
         subscriptionManager.activateSubscriptionWithStableCoin(admin);
@@ -179,14 +191,77 @@ contract SubscriptionManagerTest is Test {
 
     function testChainlinkFunction() public { /* TODO */ }
 
+    // activateSubscriptionWithEth
+
+    function testActivateSubscriptionWithEthWorks() public userRegistered inactiveSubscriptionCreated harnessCreated {
+        vm.startPrank(user);
+        vm.expectEmit(true, true, false, true);
+        emit SubscriptionManager.SubscriptionActivated(
+            admin, user, priceInUsd, paymentInterval, block.timestamp, block.timestamp + duration
+        );
+        uint256 priceInEth = subscriptionManagerHarness.getEthAmountFromUsd_HARNESS(priceInUsd);
+        subscriptionManager.activateSubscriptionWithEth{value: priceInEth}(admin);
+        vm.stopPrank();
+
+        SubscriptionManager.Subscription memory subscription = subscriptionManager.getSubscription(admin, user);
+        assertTrue(subscription.isActive);
+        assertEq(address(subscriptionManager).balance, priceInEth);
+        assertEq(
+            subscriptionManager.getAdminsEthEarningsAfterFees(admin),
+            priceInEth - subscriptionManager.calculateEthFee(priceInEth)
+        );
+        assertEq(subscriptionManager.getTotalEthFeesEarnings(), subscriptionManager.calculateEthFee(priceInEth));
+    }
+
+    function testActivateSubscriptionWithEthNoInactiveSubscription() public userRegistered harnessCreated {
+        vm.startPrank(user);
+        uint256 priceInEth = subscriptionManagerHarness.getEthAmountFromUsd_HARNESS(priceInUsd);
+        vm.expectRevert(
+            abi.encodeWithSelector(SubscriptionManager.SubscriptionManager__NoInactiveSubscriptionFound.selector, user)
+        );
+        subscriptionManager.activateSubscriptionWithEth{value: priceInEth}(admin);
+        vm.stopPrank();
+    }
+
+    function testActivateSubscriptionWithEthAlreadyActive()
+        public
+        userRegistered
+        inactiveSubscriptionCreated
+        harnessCreated
+    {
+        vm.startPrank(user);
+        uint256 priceInEth = subscriptionManagerHarness.getEthAmountFromUsd_HARNESS(priceInUsd);
+        subscriptionManager.activateSubscriptionWithEth{value: priceInEth}(admin);
+        vm.expectRevert(
+            abi.encodeWithSelector(SubscriptionManager.SubscriptionManager__SubscriptionAlreadyActive.selector)
+        );
+        subscriptionManager.activateSubscriptionWithEth{value: priceInEth}(admin);
+        vm.stopPrank();
+    }
+
+    function testActivateSubscriptionWithEthInsufficientEth()
+        public
+        userRegistered
+        inactiveSubscriptionCreated
+        harnessCreated
+    {
+        vm.startPrank(user);
+        uint256 priceInEth = subscriptionManagerHarness.getEthAmountFromUsd_HARNESS(priceInUsd);
+        vm.expectRevert(
+            abi.encodeWithSelector(SubscriptionManager.SubscriptionManager__SubscriptionPriceMismatch.selector)
+        );
+        subscriptionManager.activateSubscriptionWithEth{value: priceInEth - 1}(admin);
+        vm.stopPrank();
+    }
+
     // makePaymentWithStableCoin
 
     modifier subcriptionActive() {
         vm.startPrank(admin);
-        subscriptionManager.createInactiveSubscription(price, paymentInterval, duration, user);
+        subscriptionManager.createInactiveSubscription(priceInUsd, paymentInterval, duration, user);
         vm.stopPrank();
         vm.startPrank(user);
-        stableCoin.approve(address(subscriptionManager), price);
+        stableCoin.approve(address(subscriptionManager), priceInUsd);
         subscriptionManager.activateSubscriptionWithStableCoin(admin);
         vm.stopPrank();
         _;
@@ -197,10 +272,10 @@ contract SubscriptionManagerTest is Test {
         uint256 startTime = subscriptionManager.getSubscription(admin, user).startTime;
 
         vm.startPrank(user);
-        stableCoin.approve(address(subscriptionManager), price);
+        stableCoin.approve(address(subscriptionManager), priceInUsd);
 
         vm.expectEmit(true, true, false, true);
-        emit SubscriptionManager.PaymentMade(admin, user, price, nextPaymentTime + paymentInterval);
+        emit SubscriptionManager.PaymentMade(admin, user, priceInUsd, nextPaymentTime + paymentInterval);
 
         subscriptionManager.makePaymentWithStableCoin(admin);
         uint256 newNextPaymentTime = subscriptionManager.getSubscription(admin, user).nextPaymentTime;
@@ -211,7 +286,7 @@ contract SubscriptionManagerTest is Test {
 
     function testMakePaymentSubscriptionWithStableCoinNotActive() public userRegistered {
         vm.startPrank(user);
-        stableCoin.approve(address(subscriptionManager), price);
+        stableCoin.approve(address(subscriptionManager), priceInUsd);
         vm.expectRevert(abi.encodeWithSelector(SubscriptionManager.SubscriptionManager__SubscriptionNotActive.selector));
         subscriptionManager.makePaymentWithStableCoin(admin);
         vm.stopPrank();
@@ -219,39 +294,140 @@ contract SubscriptionManagerTest is Test {
 
     function testMakePaymentWithStableCoinInsufficientAllowance() public userRegistered subcriptionActive {
         vm.startPrank(user);
-        stableCoin.approve(address(subscriptionManager), price - 1);
+        stableCoin.approve(address(subscriptionManager), priceInUsd6Decimals - 1);
         vm.expectRevert(
             abi.encodeWithSelector(
-                IERC20Errors.ERC20InsufficientAllowance.selector, subscriptionManager, price - 1, price
+                IERC20Errors.ERC20InsufficientAllowance.selector,
+                subscriptionManager,
+                priceInUsd6Decimals - 1,
+                priceInUsd6Decimals
             )
         );
         subscriptionManager.makePaymentWithStableCoin(admin);
         vm.stopPrank();
     }
 
+    // makePaymentWithEth
+
+    function testMakePaymentWithEthWorks() public userRegistered subcriptionActive harnessCreated {
+        uint256 nextPaymentTime = subscriptionManager.getSubscription(admin, user).nextPaymentTime;
+        uint256 startTime = subscriptionManager.getSubscription(admin, user).startTime;
+
+        vm.startPrank(user);
+        uint256 priceInEth = subscriptionManagerHarness.getEthAmountFromUsd_HARNESS(priceInUsd);
+
+        vm.expectEmit(true, true, false, true);
+        emit SubscriptionManager.PaymentMade(admin, user, priceInUsd, nextPaymentTime + paymentInterval);
+
+        subscriptionManager.makePaymentWithEth{value: priceInEth}(admin);
+        vm.stopPrank();
+
+        assertEq(startTime + 2 * paymentInterval, subscriptionManager.getSubscription(admin, user).nextPaymentTime);
+        assertEq(address(subscriptionManager).balance, priceInEth);
+    }
+
+    function testMakePaymentWithEthUserNotRegistered() public harnessCreated {
+        vm.startPrank(user);
+        uint256 priceInEth = subscriptionManagerHarness.getEthAmountFromUsd_HARNESS(priceInUsd);
+        vm.expectRevert(
+            abi.encodeWithSelector(SubscriptionManager.SubscriptionManager__UserNotRegistered.selector, user)
+        );
+        subscriptionManager.makePaymentWithEth{value: priceInEth}(admin);
+        vm.stopPrank();
+    }
+
+    function testMakePaymentWithEthSubscriptionNotActive() public userRegistered harnessCreated {
+        vm.startPrank(user);
+        uint256 priceInEth = subscriptionManagerHarness.getEthAmountFromUsd_HARNESS(priceInUsd);
+        vm.expectRevert(abi.encodeWithSelector(SubscriptionManager.SubscriptionManager__SubscriptionNotActive.selector));
+        subscriptionManager.makePaymentWithEth{value: priceInEth}(admin);
+        vm.stopPrank();
+    }
+
+    function testMakePaymentWithEthSubscriptionPriceMismatch() public userRegistered subcriptionActive harnessCreated {
+        vm.startPrank(user);
+        uint256 priceInEth = subscriptionManagerHarness.getEthAmountFromUsd_HARNESS(priceInUsd);
+        vm.expectRevert(
+            abi.encodeWithSelector(SubscriptionManager.SubscriptionManager__SubscriptionPriceMismatch.selector)
+        );
+        subscriptionManager.makePaymentWithEth{value: priceInEth - 1}(admin);
+        vm.stopPrank();
+    }
+
+    // withdrawAdminEthEarnings
+    function testWithdrawAdminEthEarningsWorks() public userRegistered subcriptionActive harnessCreated {
+        uint256 priceInEth = subscriptionManagerHarness.getEthAmountFromUsd_HARNESS(priceInUsd);
+        vm.startPrank(user);
+        subscriptionManager.makePaymentWithEth{value: priceInEth}(admin);
+        vm.stopPrank();
+
+        uint256 adminEarnings = priceInEth - subscriptionManager.calculateEthFee(priceInEth);
+
+        console.log(address(subscriptionManager).balance);
+        vm.startPrank(admin);
+        vm.expectEmit(true, true, false, true);
+        emit SubscriptionManager.AdminEthWithdrawalSuccessful(admin, priceInEth);
+        subscriptionManager.withdrawAdminEthEarnings(adminEarnings);
+        vm.stopPrank();
+
+        assertEq(subscriptionManager.getAdminsEthEarningsAfterFees(admin), 0);
+        assertEq(address(subscriptionManager).balance, subscriptionManager.calculateEthFee(priceInEth));
+        assertEq(address(admin).balance, adminEarnings);
+    }
+
     // calcualteFee
 
-    function testCalculateFee() public {
-        uint256 fee = subscriptionManager.calculateUsdFee(price);
-        assertEq(fee, price / 100);
+    function testCalculateUsdFee() public {
+        uint256 fee = subscriptionManager.calculateUsdFee(priceInUsd);
+        assertEq(fee, priceInUsd / subscriptionManager.getPercentFee() - subscriptionManager.getFlatUsdFee());
+    }
+
+    function testCalculateEthFee() public harnessCreated {
+        uint256 priceInEth = subscriptionManagerHarness.getEthAmountFromUsd_HARNESS(priceInUsd);
+        uint256 fee = subscriptionManager.calculateEthFee(priceInEth);
+        assertEq(
+            fee,
+            priceInEth / subscriptionManager.getPercentFee()
+                - subscriptionManagerHarness.getEthAmountFromUsd_HARNESS(subscriptionManager.getFlatUsdFee())
+        );
+    }
+
+    modifier harnessCreated() {
+        (, address ethPriceInUsdFeed) = helperConfig.activeNetworkConfig();
+        subscriptionManagerHarness = new SubscriptionManagerHarness(stableCoin, ethPriceInUsdFeed);
+        _;
     }
 
     // Internal functions testing
-    function testGetEthAmountFromUsd() public {
-        (, address ethPriceFeed) = helperConfig.activeNetworkConfig();
-        SubscriptionManagerHarness subscriptionManagerHarness = new SubscriptionManagerHarness(stableCoin, ethPriceFeed);
+    function testGetEthAmountFromUsd() public harnessCreated {
         uint256 usdAmount = 10e18; // $10
         uint256 ethAmount = subscriptionManagerHarness.getEthAmountFromUsd_HARNESS(usdAmount);
-        assertEq(ethAmount, 10e18 / startingEthPrice);
+        assertEq(ethAmount, usdAmount / (startingEthPriceInUsd / 1e18));
     }
+    //5000000000000000
+    //50000000000000000
 
-    function testHandleStableCoinPayment() public {}
+    function testHandleStableCoinPayment() public harnessCreated {
+        uint256 usdAmount = 10e18; // $10
+        vm.startPrank(user);
+        stableCoin.approve(address(subscriptionManagerHarness), usdAmount);
+        vm.stopPrank();
+        subscriptionManagerHarness.handleStableCoinPayment_HARNESS(user, usdAmount);
+        assertEq(stableCoin.balanceOf(address(subscriptionManagerHarness)), 10e6);
+        assertEq(stableCoin.balanceOf(user), 100000e6 - 10e6);
+    }
 }
 
 contract SubscriptionManagerHarness is SubscriptionManager {
-    constructor(StableCoin _acceptedToken, address _ethPriceFeed) SubscriptionManager(_acceptedToken, _ethPriceFeed) {}
+    constructor(StableCoin _acceptedToken, address _ethPriceInUsdFeed)
+        SubscriptionManager(_acceptedToken, _ethPriceInUsdFeed)
+    {}
 
     function getEthAmountFromUsd_HARNESS(uint256 _usdAmount) external view returns (uint256) {
         return super._getEthAmountFromUsd(_usdAmount);
+    }
+
+    function handleStableCoinPayment_HARNESS(address from, uint256 _usdAmount) external {
+        return super._handleStableCoinPayment(from, _usdAmount);
     }
 }
