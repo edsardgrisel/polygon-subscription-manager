@@ -25,6 +25,7 @@ contract SubscriptionManager is Ownable {
     uint256 public immutable FLAT_USD_FEE = 0; // zero for now. may be added later
 
     // Events
+    // Note: All prices and amounts are with 18 decimals
     event SubscriptionActivated(
         address indexed admin,
         address indexed user,
@@ -305,21 +306,25 @@ contract SubscriptionManager is Ownable {
         emit AdminEthWithdrawalSuccessful(msg.sender, amount);
 
         bool success = payable(msg.sender).send(amount);
+        // In theory should never fail, but just in case
         if (!success) {
             revert SubscriptionManager__WithdrawFailed();
         }
     }
 
+    /**
+     * @dev Withdraw the earnings of the admin in USD. This function is called by the owner of the contract.
+     * @param amount The amount of USD to withdraw with 18 deciamals. If this is more than the fee earnings, all earnings will be withdrawn.
+     */
     function withdrawAdminUsdEarnings(uint256 amount) public {
         uint256 earnings = s_adminsUsdEarningsAfterFees[msg.sender];
         if (amount > earnings) {
             amount = earnings;
         }
         s_adminsUsdEarningsAfterFees[msg.sender] = earnings - amount;
-        bool success = acceptedToken.transfer(msg.sender, amount);
-        if (!success) {
-            revert SubscriptionManager__WithdrawFailed();
-        }
+        uint256 earnings6Decimals = amount / (10 ** (DECIMALS - USDT_DECIMALS));
+        acceptedToken.transfer(msg.sender, earnings6Decimals);
+
         emit AdminUsdWithdrawalSuccessful(msg.sender, amount);
     }
 
@@ -364,6 +369,11 @@ contract SubscriptionManager is Ownable {
 
     // amount: 10000000 (10 USDT)
 
+    /**
+     * @dev Calculate the fee in USD for a given amount.
+     * @param amount The amount to calculate the fee for in usd with 18 decimals
+     * @return The fee in USD.
+     */
     function calculateUsdFee(uint256 amount) public pure returns (uint256) {
         // 1000 000000/ 100 = 100_000
         uint256 percentFee = (amount * FEE) / 10000;

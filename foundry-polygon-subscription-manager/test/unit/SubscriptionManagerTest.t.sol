@@ -365,14 +365,60 @@ contract SubscriptionManagerTest is Test {
 
         console.log(address(subscriptionManager).balance);
         vm.startPrank(admin);
-        vm.expectEmit(true, true, false, true);
-        emit SubscriptionManager.AdminEthWithdrawalSuccessful(admin, priceInEth);
+        vm.expectEmit(true, false, false, true);
+        emit SubscriptionManager.AdminEthWithdrawalSuccessful(admin, adminEarnings);
         subscriptionManager.withdrawAdminEthEarnings(adminEarnings);
         vm.stopPrank();
-
         assertEq(subscriptionManager.getAdminsEthEarningsAfterFees(admin), 0);
         assertEq(address(subscriptionManager).balance, subscriptionManager.calculateEthFee(priceInEth));
         assertEq(address(admin).balance, adminEarnings);
+    }
+
+    function testWithdrawAdminEthEarningsFailed() public userRegistered subcriptionActive harnessCreated {
+        uint256 priceInEth = subscriptionManagerHarness.getEthAmountFromUsd_HARNESS(priceInUsd);
+        vm.startPrank(user);
+        subscriptionManager.makePaymentWithEth{value: priceInEth}(admin);
+        vm.stopPrank();
+
+        vm.startPrank(address(subscriptionManager));
+        payable(address(0)).transfer(address(subscriptionManager).balance);
+        vm.stopPrank();
+
+        vm.startPrank(admin);
+        vm.expectRevert(abi.encodeWithSelector(SubscriptionManager.SubscriptionManager__WithdrawFailed.selector));
+        subscriptionManager.withdrawAdminEthEarnings(priceInEth);
+        vm.stopPrank();
+    }
+
+    // withdrawAdminUsdEarnings
+
+    function testWithdrawAdminUsdEarningsWorks() public userRegistered subcriptionActive {
+        uint256 adminEarningsInUsd = priceInUsd - subscriptionManager.calculateUsdFee(priceInUsd);
+
+        vm.startPrank(admin);
+        vm.expectEmit(true, false, false, true);
+        emit SubscriptionManager.AdminUsdWithdrawalSuccessful(admin, adminEarningsInUsd);
+        subscriptionManager.withdrawAdminUsdEarnings(adminEarningsInUsd);
+        vm.stopPrank();
+
+        uint256 adminEarningsInUsd6Decimals = adminEarningsInUsd / 10 ** 12;
+
+        assertEq(subscriptionManager.getAdminsUsdEarningsAfterFees(admin), 0);
+        assertEq(subscriptionManager.getTotalUsdFeesEarnings(), subscriptionManager.calculateUsdFee(priceInUsd));
+        assertEq(stableCoin.balanceOf(admin), adminEarningsInUsd6Decimals);
+    }
+
+    function testWithdrawAdminUsdEarningsFailed() public userRegistered subcriptionActive {
+        vm.startPrank(address(subscriptionManager));
+        stableCoin.transfer(address(this), stableCoin.balanceOf(address(subscriptionManager)));
+        vm.stopPrank();
+
+        uint256 adminEarningsInUsd = priceInUsd - subscriptionManager.calculateUsdFee(priceInUsd);
+
+        vm.startPrank(admin);
+        vm.expectRevert();
+        subscriptionManager.withdrawAdminUsdEarnings(adminEarningsInUsd);
+        vm.stopPrank();
     }
 
     // calcualteFee
