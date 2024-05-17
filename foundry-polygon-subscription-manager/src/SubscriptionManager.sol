@@ -23,7 +23,7 @@ contract SubscriptionManager is Ownable {
     uint256 public immutable FEE = 100; // Basis points 1.00%
     uint256 public immutable FLAT_USD_FEE = 0; // zero for now. may be added later
 
-    mapping(uint256 day => Subscription[] subscriptions) private s_subscriptionsDueOnDay; // for each day in the future, there is a list of users that are required to pay on that day
+    mapping(uint256 day => AdminUserRelation[] adminUserRelations) private s_adminUserRelationsDueOnDay; // for each day in the future, there is a list of users that are required to pay on that day
     mapping(uint256 day => bool) private s_processedDays; // day is set to true if the day has been processed
 
     // Events
@@ -48,6 +48,7 @@ contract SubscriptionManager is Ownable {
     event AdminUsdWithdrawalSuccessful(address indexed admin, uint256 amount);
     event OwnerEthFeesWithdrawalSuccessful(address indexed owner, uint256 amount);
     event OwnerUsdFeesWithdrawalSuccessful(address indexed owner, uint256 amount);
+    event DayProcessed(uint256 day);
 
     // Errors
     error SubscriptionManager__SubscriptionAlreadyActive();
@@ -70,6 +71,11 @@ contract SubscriptionManager is Ownable {
         address admin;
         address user;
         bool isActive;
+    }
+
+    struct AdminUserRelation {
+        address admin;
+        address user;
     }
 
     // Modifiers
@@ -100,9 +106,12 @@ contract SubscriptionManager is Ownable {
         if (getProcessedDay(day) == true) {
             return;
         }
-        Subscription[] memory subscriptionsDueToday = getSubscriptionsDueOnDay(day);
+        AdminUserRelation[] memory subscriptionsDueToday = getAdminUserRelationsDueOnDay(day);
         for (uint256 i = 0; i < subscriptionsDueToday.length; i++) {
-            Subscription memory subscription = subscriptionsDueToday[i];
+            AdminUserRelation memory adminUserRelation = subscriptionsDueToday[i];
+            Subscription memory subscription = s_subscriptions[adminUserRelation.admin][adminUserRelation.user];
+            // console.log("day", day);
+            // console.log("getNumberOfDaysSince1970", _getNumberOfDaysSince1970(subscription.nextPaymentTime));
             if (day == _getNumberOfDaysSince1970(subscription.nextPaymentTime)) {
                 // if payment hasnt been made
                 s_subscriptions[subscription.admin][subscription.user] = Subscription({
@@ -121,6 +130,7 @@ contract SubscriptionManager is Ownable {
             }
         }
         s_processedDays[day] = true;
+        emit DayProcessed(day);
     }
 
     /**
@@ -507,8 +517,8 @@ contract SubscriptionManager is Ownable {
 
     function _handleSetNextPaymentDay(address admin, address user, uint256 nextPaymentTime) internal {
         uint256 nextPaymentDay = _getNumberOfDaysSince1970(nextPaymentTime);
-        Subscription memory subscription = s_subscriptions[admin][user];
-        s_subscriptionsDueOnDay[nextPaymentDay].push(subscription);
+        AdminUserRelation memory adminUserRelation = AdminUserRelation({admin: admin, user: user});
+        s_adminUserRelationsDueOnDay[nextPaymentDay].push(adminUserRelation);
     }
 
     /**
@@ -523,8 +533,8 @@ contract SubscriptionManager is Ownable {
 
     // Getters
 
-    function getSubscriptionDueOnDay(uint256 date) public view returns (Subscription[] memory) {
-        return s_subscriptionsDueOnDay[date];
+    function getAdminUserRelationsDueOnDay(uint256 date) public view returns (AdminUserRelation[] memory) {
+        return s_adminUserRelationsDueOnDay[date];
     }
 
     function getstableCoinAddress() public view returns (address) {
@@ -567,7 +577,7 @@ contract SubscriptionManager is Ownable {
         return s_processedDays[day];
     }
 
-    function getSubscriptionsDueOnDay(uint256 day) public view returns (Subscription[] memory) {
-        return s_subscriptionsDueOnDay[day];
+    function getSubscriptionsDueOnDay(uint256 day) public view returns (AdminUserRelation[] memory) {
+        return s_adminUserRelationsDueOnDay[day];
     }
 }

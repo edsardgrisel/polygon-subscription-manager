@@ -27,6 +27,7 @@ contract SubscriptionManagerTest is Test {
     uint256 startingEthPriceInUsd = 2000e18; // 2000 USD with 18 decimals
 
     function setUp() external {
+        vm.warp(1715939110); // Fri May 17 2024 09:45:10 GMT+0000
         DeployStableCoin deployStableCoin = new DeployStableCoin();
         stableCoin = deployStableCoin.run();
         DeploySubscriptionManager deploySubscriptionManager = new DeploySubscriptionManager();
@@ -564,6 +565,42 @@ contract SubscriptionManagerTest is Test {
         uint256 nextPaymentDay =
             subscriptionManagerHarness.getNumberOfDaysSince1970_HARNESS(paymentInterval, previousPaymentDue);
         assertEq(nextPaymentDay, daysBetween1970AndNow + paymentInterval / 86400);
+    }
+
+    // test upKeep
+
+    // Fri May 17 2024 09:45:10 GMT+0000
+    function testUpKeep() public userRegistered subscriptionActive harnessCreated {
+        uint256 nextPaymentTimeUser = subscriptionManager.getSubscription(admin, user).nextPaymentTime;
+
+        address newUser = makeAddr("newUser");
+        vm.startPrank(subscriptionManager.owner());
+        subscriptionManager.registerUser(newUser);
+        vm.stopPrank();
+        vm.startPrank(admin);
+        subscriptionManager.createInactiveSubscription(priceInUsd, paymentInterval, duration, newUser);
+        vm.stopPrank();
+        vm.startPrank(newUser);
+        stableCoin.mint();
+        stableCoin.approve(address(subscriptionManager), priceInUsd6Decimals);
+        subscriptionManager.activateSubscriptionWithStableCoin(admin);
+        vm.stopPrank();
+
+        vm.warp(nextPaymentTimeUser - 1);
+        vm.startPrank(user);
+        stableCoin.approve(address(subscriptionManager), priceInUsd);
+        subscriptionManager.makePaymentWithStableCoin(admin);
+        vm.stopPrank();
+
+        vm.warp(nextPaymentTimeUser);
+
+        subscriptionManager.upKeep();
+
+        assertEq(subscriptionManager.getSubscription(admin, user).isActive, true);
+        assertEq(subscriptionManager.getSubscription(admin, newUser).isActive, false);
+        assertEq(
+            subscriptionManager.getSubscription(admin, user).nextPaymentTime, nextPaymentTimeUser + paymentInterval
+        );
     }
 }
 
