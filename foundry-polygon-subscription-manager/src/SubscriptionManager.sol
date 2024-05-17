@@ -24,6 +24,8 @@ contract SubscriptionManager is Ownable {
     uint256 public immutable FEE = 100; // Basis points 1.00%
     uint256 public immutable FLAT_USD_FEE = 0; // zero for now. may be added later
 
+    mapping(uint256 day => Subscription[] subscriptions) private subscriptionsDueOnDay;
+
     // Events
     // Note: All prices and amounts are with 18 decimals
     event SubscriptionActivated(
@@ -40,7 +42,7 @@ contract SubscriptionManager is Ownable {
     );
     event UserRegistered(address indexed user);
     event UserUnregistered(address indexed user);
-    event SubscriptionCanceled(address indexed admin, address indexed user);
+    event SubscriptionCancelled(address indexed admin, address indexed user);
     event AdminEthWithdrawalSuccessful(address indexed admin, uint256 amount);
     event AdminUsdWithdrawalSuccessful(address indexed admin, uint256 amount);
     event OwnerEthFeesWithdrawalSuccessful(address indexed owner, uint256 amount);
@@ -370,7 +372,7 @@ contract SubscriptionManager is Ownable {
             revert SubscriptionManager__SubscriptionNotActive();
         }
         s_subscriptions[admin][msg.sender].isActive = false;
-        emit SubscriptionCanceled(admin, msg.sender);
+        emit SubscriptionCancelled(admin, msg.sender);
     }
 
     receive() external payable {} // to receive payments
@@ -388,7 +390,7 @@ contract SubscriptionManager is Ownable {
         return percentFee + FLAT_USD_FEE;
     }
 
-    function calculateEthFee(uint256 amount) public returns (uint256) {
+    function calculateEthFee(uint256 amount) public view returns (uint256) {
         // 1000 000000/ 100 = 100_000
         uint256 percentFee = (amount * FEE) / 10000;
         uint256 ethFee = _getEthAmountFromUsd(FLAT_USD_FEE);
@@ -420,6 +422,22 @@ contract SubscriptionManager is Ownable {
         (, int256 price,,,) = wethPriceFeed.latestRoundData(); // e.g $1000 would return 1000.00000000
         uint256 price18Decimals = uint256(price) * (10 ** (DECIMALS - PRICE_FEED_DECIMALS));
         return (amount * 1e18) / uint256(price18Decimals);
+    }
+    /**
+     * @dev Get the day of the next payment. Day in number of days since 1970-01-01.
+     * @param paymentInterval The interval at which the user has to pay
+     * @param previousPaymentDue The time of the previous payment
+     * @return The day of the next payment.
+     */
+
+    function _getDayOfNextPayment(uint256 paymentInterval, uint256 previousPaymentDue)
+        internal
+        pure
+        returns (uint256)
+    {
+        uint256 nextPaymentDue = previousPaymentDue + paymentInterval;
+        uint256 day = nextPaymentDue / 1 days;
+        return day;
     }
 
     // Getters

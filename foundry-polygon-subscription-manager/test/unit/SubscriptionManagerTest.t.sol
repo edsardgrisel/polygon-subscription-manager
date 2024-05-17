@@ -492,6 +492,22 @@ contract SubscriptionManagerTest is Test {
         vm.stopPrank();
     }
 
+    // cancelSubscription
+
+    function testCancel() public userRegistered subscriptionActive {
+        SubscriptionManager.Subscription memory subscriptionBefore = subscriptionManager.getSubscription(admin, user);
+        assertTrue(subscriptionBefore.isActive);
+
+        vm.startPrank(user);
+        vm.expectEmit(true, true, false, true);
+        emit SubscriptionManager.SubscriptionCancelled(admin, user);
+        subscriptionManager.cancelSubscription(admin);
+        vm.stopPrank();
+
+        SubscriptionManager.Subscription memory subscriptionAfter = subscriptionManager.getSubscription(admin, user);
+        assertTrue(!subscriptionAfter.isActive);
+    }
+
     // calcualteFee
 
     function testCalculateUsdFee() public {
@@ -533,6 +549,22 @@ contract SubscriptionManagerTest is Test {
         assertEq(stableCoin.balanceOf(address(subscriptionManagerHarness)), 10e6);
         assertEq(stableCoin.balanceOf(user), 100000e6 - 10e6);
     }
+
+    function testGetDayOfNextPayment1() public harnessCreated {
+        uint256 previousPaymentDue = 1715939110; //now : Fri May 17 2024 09:45:10 GMT+0000
+        uint256 daysBetween1970AndNow = 19860;
+        uint256 nextPaymentDay =
+            subscriptionManagerHarness.getDayOfNextPayment_HARNESS(paymentInterval, previousPaymentDue);
+        assertEq(nextPaymentDay, daysBetween1970AndNow + paymentInterval / 86400);
+    }
+
+    function testGetDayOfNextPayment2() public harnessCreated {
+        uint256 previousPaymentDue = 1716939110; //now : Tue May 28 2024 23:31:50 GMT+0000
+        uint256 daysBetween1970AndNow = 19860 + 11;
+        uint256 nextPaymentDay =
+            subscriptionManagerHarness.getDayOfNextPayment_HARNESS(paymentInterval, previousPaymentDue);
+        assertEq(nextPaymentDay, daysBetween1970AndNow + paymentInterval / 86400);
+    }
 }
 
 contract SubscriptionManagerHarness is SubscriptionManager {
@@ -546,5 +578,13 @@ contract SubscriptionManagerHarness is SubscriptionManager {
 
     function handleStableCoinPayment_HARNESS(address from, uint256 _usdAmount) external {
         return super._handleStableCoinPayment(from, _usdAmount);
+    }
+
+    function getDayOfNextPayment_HARNESS(uint256 _paymentInterval, uint256 _previousPaymentDue)
+        external
+        view
+        returns (uint256)
+    {
+        return super._getDayOfNextPayment(_paymentInterval, _previousPaymentDue);
     }
 }
