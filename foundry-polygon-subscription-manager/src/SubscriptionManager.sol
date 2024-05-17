@@ -9,7 +9,6 @@ import {Test, console} from "forge-std/Test.sol";
 contract SubscriptionManager is Ownable {
     // State variables
     mapping(address admin => mapping(address user => Subscription)) private s_subscriptions; // the agreement between the admin and the user
-    mapping(uint256 date => address[] usersToPayOnDate) private s_subscriptionsDue; // for each day in the future, there is a list of users that are required to pay on that day
     mapping(address => bool) private s_registeredUsers;
     mapping(address admin => uint256 usdEarnings) private s_adminsUsdEarningsAfterFees;
     mapping(address admin => uint256 ethEarnings) private s_adminsEthEarningsAfterFees;
@@ -24,10 +23,12 @@ contract SubscriptionManager is Ownable {
     uint256 public immutable FEE = 100; // Basis points 1.00%
     uint256 public immutable FLAT_USD_FEE = 0; // zero for now. may be added later
 
-    mapping(uint256 day => Subscription[] subscriptions) private subscriptionsDueOnDay;
+    mapping(uint256 day => Subscription[] subscriptions) private s_subscriptionsDueOnDay; // for each day in the future, there is a list of users that are required to pay on that day
+    mapping(uint256 day => bool) private s_processedDays; // day is set to true if the day has been processed
 
     // Events
     // Note: All prices and amounts are with 18 decimals
+    // if not specified, its usd and not eth
     event SubscriptionActivated(
         address indexed admin,
         address indexed user,
@@ -92,6 +93,36 @@ contract SubscriptionManager is Ownable {
         wethPriceFeed = AggregatorV3Interface(_wethPriceFeed);
     }
 
+    // Chainlink automation
+
+    function upKeep() external {
+        uint256 day = _getNumberOfDaysSince1970(block.timestamp);
+        if (getProcessedDay(day) == true) {
+            return;
+        }
+        Subscription[] memory subscriptionsDueToday = getSubscriptionsDueOnDay(day);
+        for (uint256 i = 0; i < subscriptionsDueToday.length; i++) {
+            Subscription memory subscription = subscriptionsDueToday[i];
+            if (day == _getNumberOfDaysSince1970(subscription.nextPaymentTime)) {
+                // if payment hasnt been made
+                s_subscriptions[subscription.admin][subscription.user] = Subscription({
+                    price: 0,
+                    paymentInterval: 0,
+                    startTime: 0,
+                    duration: 0,
+                    nextPaymentTime: 0,
+                    admin: subscription.admin,
+                    user: subscription.user,
+                    isActive: false
+                });
+                emit SubscriptionCancelled(subscription.admin, subscription.user);
+            } else {
+                _handleSetNextPaymentDay(subscription.admin, subscription.user, subscription.nextPaymentTime);
+            }
+        }
+        s_processedDays[day] = true;
+    }
+
     /**
      * @dev Create a new subscription. This subscription is inactive until the user makes the first payment by calling the makePayment() function.
      * Is called by the admin of the subscription.
@@ -143,6 +174,11 @@ contract SubscriptionManager is Ownable {
         emit UserUnregistered(user);
     }
 
+    /**
+     * @dev Activate a subscription. This function is called with value by the user that is subscribing.
+     * The user will pay for the first subscription period.
+     * @param admin The admin of the subscription the user is subscribing to.
+     */
     function activateSubscriptionWithEth(address admin) public payable isRegisteredUser(msg.sender) {
         Subscription memory subscription = s_subscriptions[admin][msg.sender];
 
@@ -182,6 +218,7 @@ contract SubscriptionManager is Ownable {
             block.timestamp,
             block.timestamp + subscription.duration
         );
+        _handleSetNextPaymentDay(admin, msg.sender, newSubscription.nextPaymentTime);
         _updateAdminEthEarnings(admin, ethAmount);
 
         // chainlink function to call backend to send email to user with confirmation and next payment date
@@ -226,12 +263,18 @@ contract SubscriptionManager is Ownable {
             block.timestamp,
             block.timestamp + subscription.duration
         );
+        _handleSetNextPaymentDay(admin, msg.sender, newSubscription.nextPaymentTime);
         _updateAdminUsdEarnings(admin, subscription.price);
         _handleStableCoinPayment(msg.sender, subscription.price);
 
         // chainlink function to call backend to send email to user with confirmation and next payment date
     }
 
+    /**
+     * @dev Make a payment for a subscription. This function is called by the user that is subscribed.
+     * The user will pay for the next subscription period. Approval for the payment must be given before calling this function.
+     * @param admin The admin of the subscription the user is subscribing to.
+     */
     function makePaymentWithEth(address admin) public payable isRegisteredUser(msg.sender) {
         Subscription memory subscription = s_subscriptions[admin][msg.sender];
 
@@ -262,6 +305,7 @@ contract SubscriptionManager is Ownable {
         emit PaymentMade(
             newSubscription.admin, newSubscription.user, newSubscription.price, newSubscription.nextPaymentTime
         );
+        _handleSetNextPaymentDay(admin, msg.sender, newSubscription.nextPaymentTime);
         _updateAdminEthEarnings(admin, ethAmount);
     }
 
@@ -277,7 +321,7 @@ contract SubscriptionManager is Ownable {
             revert SubscriptionManager__SubscriptionNotActive();
         }
 
-        // Set times and activate the subscription
+        // Set times
         Subscription memory newSubscription = Subscription({
             price: subscription.price,
             paymentInterval: subscription.paymentInterval,
@@ -294,10 +338,15 @@ contract SubscriptionManager is Ownable {
         emit PaymentMade(
             newSubscription.admin, newSubscription.user, newSubscription.price, newSubscription.nextPaymentTime
         );
+        _handleSetNextPaymentDay(admin, msg.sender, newSubscription.nextPaymentTime);
         _updateAdminUsdEarnings(admin, subscription.price);
         _handleStableCoinPayment(msg.sender, subscription.price);
     }
 
+    /**
+     * @dev Withdraw the earnings of the admin in ETH. This function is called by an admin of a subscription(s).
+     * @param amount The amount of ETH to withdraw. If this is more than the fee earnings, all earnings will be withdrawn.
+     */
     function withdrawAdminEthEarnings(uint256 amount) public {
         uint256 earnings = s_adminsEthEarningsAfterFees[msg.sender];
         if (amount > earnings) {
@@ -366,6 +415,13 @@ contract SubscriptionManager is Ownable {
         acceptedToken.transfer(msg.sender, usdAmount6Decimals);
     }
 
+    /**
+     * @dev Cancel a subscription. This function is called by the user that is subscribed.
+     * The user will no longer be required to pay for the subscription and it will be inactive.
+     * If you call this function, your subscription will be cancelled regardless of the time left on the subscription.
+     * Note: This may be redundant as the subscription will be cancelled if the user does not make a payment on time.
+     * @param admin The admin of the subscription the user is subscribing to.
+     */
     function cancelSubscription(address admin) public isRegisteredUser(msg.sender) {
         Subscription memory subscription = s_subscriptions[admin][msg.sender];
         if (subscription.isActive != true) {
@@ -390,6 +446,11 @@ contract SubscriptionManager is Ownable {
         return percentFee + FLAT_USD_FEE;
     }
 
+    /**
+     * @dev Calculate the fee in ETH for a given amount.
+     * @param amount The amount to calculate the fee for in eth with 18 decimals
+     * @return The fee in ETH.
+     */
     function calculateEthFee(uint256 amount) public view returns (uint256) {
         // 1000 000000/ 100 = 100_000
         uint256 percentFee = (amount * FEE) / 10000;
@@ -399,6 +460,11 @@ contract SubscriptionManager is Ownable {
 
     // internal functions
 
+    /**
+     * @dev Update the earnings of the admin in USD after they receive payment in USD.
+     * @param admin The admin to update the earnings for
+     * @param amount The amount in USD with 18 decimals
+     */
     function _updateAdminUsdEarnings(address admin, uint256 amount) internal {
         uint256 fee = calculateUsdFee(amount);
         s_totalUsdFeesEarnings += fee;
@@ -406,6 +472,11 @@ contract SubscriptionManager is Ownable {
         s_adminsUsdEarningsAfterFees[admin] += earningsAfterFees;
     }
 
+    /**
+     * @dev Update the earnings of the admin in ETH after they receive payment in ETH.
+     * @param admin The admin to update the earnings for
+     * @param amount The amount in ETH with 18 decimals
+     */
     function _updateAdminEthEarnings(address admin, uint256 amount) internal {
         uint256 fee = calculateEthFee(amount);
         s_totalEthFeesEarnings += fee;
@@ -413,37 +484,47 @@ contract SubscriptionManager is Ownable {
         s_adminsEthEarningsAfterFees[admin] += earningsAfterFees;
     }
 
+    /**
+     * @dev Handle the payment in stable coin.
+     * @param from The user that is paying
+     * @param amount The amount in USD with 18 decimals
+     */
     function _handleStableCoinPayment(address from, uint256 amount /* in usd with 18 decimals */ ) internal {
         uint256 usdtAmount = amount / (10 ** (DECIMALS - USDT_DECIMALS));
         acceptedToken.transferFrom(from, address(this), usdtAmount);
     }
 
+    /**
+     * @dev Get the amount of ETH for a given amount in USD.
+     * @param amount The amount in USD with 18 decimals
+     * @return The amount in ETH with 18 decimals.
+     */
     function _getEthAmountFromUsd(uint256 amount) internal view returns (uint256) {
         (, int256 price,,,) = wethPriceFeed.latestRoundData(); // e.g $1000 would return 1000.00000000
         uint256 price18Decimals = uint256(price) * (10 ** (DECIMALS - PRICE_FEED_DECIMALS));
         return (amount * 1e18) / uint256(price18Decimals);
     }
-    /**
-     * @dev Get the day of the next payment. Day in number of days since 1970-01-01.
-     * @param paymentInterval The interval at which the user has to pay
-     * @param previousPaymentDue The time of the previous payment
-     * @return The day of the next payment.
-     */
 
-    function _getDayOfNextPayment(uint256 paymentInterval, uint256 previousPaymentDue)
-        internal
-        pure
-        returns (uint256)
-    {
-        uint256 nextPaymentDue = previousPaymentDue + paymentInterval;
-        uint256 day = nextPaymentDue / 1 days;
-        return day;
+    function _handleSetNextPaymentDay(address admin, address user, uint256 nextPaymentTime) internal {
+        uint256 nextPaymentDay = _getNumberOfDaysSince1970(nextPaymentTime);
+        Subscription memory subscription = s_subscriptions[admin][user];
+        s_subscriptionsDueOnDay[nextPaymentDay].push(subscription);
+    }
+
+    /**
+     * duplicate?
+     * @dev Get the number of days since 1970-01-01.
+     * @param timestamp The timestamp to get the number of days since 1970-01-01.
+     * @return The number of days since 1970-01-01.
+     */
+    function _getNumberOfDaysSince1970(uint256 timestamp) internal pure returns (uint256) {
+        return timestamp / 1 days;
     }
 
     // Getters
 
-    function getSubscriptionDue(address admin, uint256 date) public view returns (address[] memory) {
-        return s_subscriptionsDue[date];
+    function getSubscriptionDueOnDay(uint256 date) public view returns (Subscription[] memory) {
+        return s_subscriptionsDueOnDay[date];
     }
 
     function getstableCoinAddress() public view returns (address) {
@@ -480,5 +561,13 @@ contract SubscriptionManager is Ownable {
 
     function getTotalEthFeesEarnings() public view returns (uint256) {
         return s_totalEthFeesEarnings;
+    }
+
+    function getProcessedDay(uint256 day) public view returns (bool) {
+        return s_processedDays[day];
+    }
+
+    function getSubscriptionsDueOnDay(uint256 day) public view returns (Subscription[] memory) {
+        return s_subscriptionsDueOnDay[day];
     }
 }

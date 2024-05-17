@@ -554,7 +554,7 @@ contract SubscriptionManagerTest is Test {
         uint256 previousPaymentDue = 1715939110; //now : Fri May 17 2024 09:45:10 GMT+0000
         uint256 daysBetween1970AndNow = 19860;
         uint256 nextPaymentDay =
-            subscriptionManagerHarness.getDayOfNextPayment_HARNESS(paymentInterval, previousPaymentDue);
+            subscriptionManagerHarness.getNumberOfDaysSince1970_HARNESS(paymentInterval, previousPaymentDue);
         assertEq(nextPaymentDay, daysBetween1970AndNow + paymentInterval / 86400);
     }
 
@@ -562,7 +562,7 @@ contract SubscriptionManagerTest is Test {
         uint256 previousPaymentDue = 1716939110; //now : Tue May 28 2024 23:31:50 GMT+0000
         uint256 daysBetween1970AndNow = 19860 + 11;
         uint256 nextPaymentDay =
-            subscriptionManagerHarness.getDayOfNextPayment_HARNESS(paymentInterval, previousPaymentDue);
+            subscriptionManagerHarness.getNumberOfDaysSince1970_HARNESS(paymentInterval, previousPaymentDue);
         assertEq(nextPaymentDay, daysBetween1970AndNow + paymentInterval / 86400);
     }
 }
@@ -580,11 +580,11 @@ contract SubscriptionManagerHarness is SubscriptionManager {
         return super._handleStableCoinPayment(from, _usdAmount);
     }
 
-    function getDayOfNextPayment_HARNESS(uint256 _paymentInterval, uint256 _previousPaymentDue)
+    function getNumberOfDaysSince1970_HARNESS(uint256 _paymentInterval, uint256 _previousPaymentDue)
         external
-        view
+        pure
         returns (uint256)
     {
-        return super._getDayOfNextPayment(_paymentInterval, _previousPaymentDue);
+        return super._getNumberOfDaysSince1970(_paymentInterval + _previousPaymentDue);
     }
 }
