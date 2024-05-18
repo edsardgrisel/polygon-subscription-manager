@@ -145,6 +145,7 @@ contract SubscriptionManager is Ownable {
     function createInactiveSubscription(uint256 price, uint256 paymentInterval, uint256 duration, address user)
         external
         isRegisteredUser(user)
+        isRegisteredUser(msg.sender)
     {
         address admin = msg.sender;
         // create a new subscription
