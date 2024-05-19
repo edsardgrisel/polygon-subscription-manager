@@ -24,7 +24,7 @@ function MyApp({ Component, pageProps }) {
                 <ApolloProvider client={client}>
                     <NotificationProvider>
                         <Header />
-                        <Component {...pageProps} />
+                        <Component className="bg-blue-500" {...pageProps} />
                     </NotificationProvider>
                 </ApolloProvider>
             </MoralisProvider>

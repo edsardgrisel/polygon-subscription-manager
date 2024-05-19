@@ -31,6 +31,9 @@ export default function Header() {
                 <Link href="/owner-analytics">
                     <a className="font-sans mr-4 p-4 text-blue-800">Owner Analytics</a>
                 </Link>
+                <Link href="/register">
+                    <a className="font-sans mr-4 p-4 text-blue-800">Register</a>
+                </Link>
 
             </div>
             <ConnectButton moralisAuth={false} />
