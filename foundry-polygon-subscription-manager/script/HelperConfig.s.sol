@@ -19,13 +19,13 @@ contract HelperConfig is Script {
 
     constructor() {
         if (block.chainid == 1442) {
-            activeNetworkConfig = getCardonaEthConfig();
+            activeNetworkConfig = getAvaxConfig();
         } else {
             activeNetworkConfig = getOrCreateAnvilEthConfig();
         }
     }
 
-    function getCardonaEthConfig() public view returns (NetworkConfig memory cardonaNetworkConfig) {
+    function getAvaxConfig() public view returns (NetworkConfig memory cardonaNetworkConfig) {
         cardonaNetworkConfig = NetworkConfig({
             deployerKey: vm.envUint("ZKEVM_TESTNET_PRIVATE_KEY"),
             ethPriceFeed: vm.envAddress("ZKEVM_TESTNET_ETHUSD_PRICE_FEED")
