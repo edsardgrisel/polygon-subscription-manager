@@ -3,7 +3,7 @@ import { Form, useNotification} from "web3uikit"
 import { useState, useEffect } from 'react'
 import { ethers } from "ethers"
 import { useMoralis, useWeb3Contract } from "react-moralis"
-import {SubscriptionManagerAbi as subscriptionManagerAbi} from '../constants/subscriptionManagerAbi.json';
+import subscriptionManagerAbi from '../constants/subscriptionManagerAbi.json';
 import networkMapping from "../constants/networkMapping.json"
 
 
@@ -93,13 +93,14 @@ const handleWithdrawAvaxSuccess = (amountAvaxToWithdraw) => {
               contractAddress: subscriptionManagerAddress,
               functionName: "getAdminsUsdEarningsAfterFees",
               params: {
-                  user: account,
+                  admin: account,
               },
           },
           onError: (usdError) => console.log(usdError),
       })
       if (returnedUsdProceeds) {
-          setUsdBalance(ethers.utils.formatUnits(returnedUsdProceeds, "ether"))
+        console.log(returnedUsdProceeds);
+        setUsdBalance(ethers.utils.formatUnits(returnedUsdProceeds, 6))
       }
       // get avax balance
       const returnedAvaxProceeds = await runContractFunction({
@@ -108,7 +109,7 @@ const handleWithdrawAvaxSuccess = (amountAvaxToWithdraw) => {
             contractAddress: subscriptionManagerAddress,
             functionName: "getAdminsEthEarningsAfterFees",
             params: {
-                user: account,
+                admin: account,
             },
         },
         onError: (avaxError) => console.log(avaxError),
@@ -116,6 +117,7 @@ const handleWithdrawAvaxSuccess = (amountAvaxToWithdraw) => {
       if (returnedAvaxProceeds) {
         setAvaxBalance(ethers.utils.formatUnits(returnedAvaxProceeds, "ether"))
       }
+      if(usdBalance) console.log(usdBalance);
   }
 
   useEffect(() => {

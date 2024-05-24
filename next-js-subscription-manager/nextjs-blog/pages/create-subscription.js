@@ -3,7 +3,7 @@ import { Form, useNotification} from "web3uikit"
 import { useState, useEffect } from 'react'
 import { ethers } from "ethers"
 import { useMoralis, useWeb3Contract } from "react-moralis"
-import {SubscriptionManagerAbi as subscriptionManagerAbi} from '../constants/subscriptionManagerAbi.json';
+import subscriptionManagerAbi from '../constants/subscriptionManagerAbi.json';
 import networkMapping from "../constants/networkMapping.json"
 
 
@@ -67,7 +67,7 @@ export default function Home() {
   return (
     <div className={styles.container} style={{ paddingBottom: '200px' }}>
       <Form 
-          onSubmit={poo}
+          onSubmit={createSubscription}
           data={[
               {
                   name: "Client's wallet address(Avalanche Fuji)",

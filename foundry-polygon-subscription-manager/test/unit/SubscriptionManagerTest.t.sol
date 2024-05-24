@@ -28,10 +28,8 @@ contract SubscriptionManagerTest is Test {
 
     function setUp() external {
         vm.warp(1715939110); // Fri May 17 2024 09:45:10 GMT+0000
-        DeployStableCoin deployStableCoin = new DeployStableCoin();
-        stableCoin = deployStableCoin.run();
         DeploySubscriptionManager deploySubscriptionManager = new DeploySubscriptionManager();
-        (subscriptionManager, helperConfig) = deploySubscriptionManager.run(address(stableCoin));
+        (subscriptionManager, stableCoin, helperConfig) = deploySubscriptionManager.run();
 
         vm.startPrank(user);
         stableCoin.mint();
@@ -43,6 +41,7 @@ contract SubscriptionManagerTest is Test {
     modifier userRegistered() {
         vm.startPrank(subscriptionManager.owner());
         subscriptionManager.registerUser(user);
+        subscriptionManager.registerUser(admin);
         vm.stopPrank();
         _;
     }
@@ -99,6 +98,27 @@ contract SubscriptionManagerTest is Test {
         );
         subscriptionManager.registerUser(user);
         vm.stopPrank();
+    }
+
+    // function testRegisterAndUnregister
+
+    function testRegisterAndUnregister() public {
+        assertFalse(subscriptionManager.getIsRegisteredUser(user));
+        vm.startPrank(user);
+        vm.expectEmit(true, false, false, false);
+        emit SubscriptionManager.UserRegistered(user);
+        subscriptionManager.registerUser(user);
+        vm.stopPrank();
+
+        assertTrue(subscriptionManager.getIsRegisteredUser(user));
+
+        vm.startPrank(subscriptionManager.owner());
+        vm.expectEmit(true, false, false, false);
+        emit SubscriptionManager.UserUnregistered(user);
+        subscriptionManager.unregisterUser(user);
+        vm.stopPrank();
+
+        assertTrue(!subscriptionManager.getIsRegisteredUser(user));
     }
 
     // unregisterUser

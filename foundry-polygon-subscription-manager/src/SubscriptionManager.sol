@@ -59,6 +59,7 @@ contract SubscriptionManager is Ownable {
     error SubscriptionManager__TokenNotAccepted(address tokenAddress);
     error SubscriptionManager__NoInactiveSubscriptionFound(address user);
     error SubscriptionManager__WithdrawFailed();
+    error SubscriptionManager__NotAuthorized(address user);
 
     // Structs
 
@@ -171,7 +172,10 @@ contract SubscriptionManager is Ownable {
      * @dev Register a user. This function is called by the owner of the contract after name and email are in database.
      * @param user The user to register
      */
-    function registerUser(address user) external onlyOwner isNotRegisteredUser(user) {
+    function registerUser(address user) external isNotRegisteredUser(user) {
+        if (msg.sender != owner() && msg.sender != user) {
+            revert SubscriptionManager__NotAuthorized(user);
+        }
         s_registeredUsers[user] = true;
         emit UserRegistered(user);
     }
@@ -180,7 +184,10 @@ contract SubscriptionManager is Ownable {
      * @dev Unregister a user. This function is called by the owner of the contract.
      * @param user The user to unregister
      */
-    function unregisterUser(address user) external onlyOwner isRegisteredUser(user) {
+    function unregisterUser(address user) external isRegisteredUser(user) {
+        if (msg.sender != owner() && msg.sender != user) {
+            revert SubscriptionManager__NotAuthorized(user);
+        }
         s_registeredUsers[user] = false;
         emit UserUnregistered(user);
     }

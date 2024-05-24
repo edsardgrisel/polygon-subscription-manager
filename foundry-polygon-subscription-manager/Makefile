@@ -9,3 +9,4 @@ deploy:
 	@forge script script/DeploySubscriptionManager.s.sol:DeploySubscriptionManager $(NETWORK_ARGS) 
 
 updateFrontEndAbi: node script/updateFrontEndAbi.js
+

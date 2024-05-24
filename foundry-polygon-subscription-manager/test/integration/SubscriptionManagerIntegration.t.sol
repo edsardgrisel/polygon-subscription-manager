@@ -3,7 +3,7 @@ pragma solidity ^0.8.19;
 
 import {ERC20, IERC20Errors} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {Test, console} from "forge-std/Test.sol";
-import {DeploySubscriptionManager} from "../../script/DeploySubscriptionManager.s.sol";
+import {DeployTestSubscriptionManager} from "../../script/DeployTestSubscriptionManager.s.sol";
 import {DeployStableCoin} from "../../script/DeployStableCoin.s.sol";
 import {SubscriptionManager} from "../../src/SubscriptionManager.sol";
 import {HelperConfig} from "../../script/HelperConfig.s.sol";
@@ -27,10 +27,8 @@ contract SubscriptionManagerTest is Test {
     uint256 startingEthPriceInUsd = 2000e18; // 2000 USD with 18 decimals
 
     function setUp() external {
-        DeployStableCoin deployStableCoin = new DeployStableCoin();
-        stableCoin = deployStableCoin.run();
-        DeploySubscriptionManager deploySubscriptionManager = new DeploySubscriptionManager();
-        (subscriptionManager, helperConfig) = deploySubscriptionManager.run(address(stableCoin));
+        DeployTestSubscriptionManager deploySubscriptionManager = new DeployTestSubscriptionManager();
+        (subscriptionManager, stableCoin, helperConfig) = deploySubscriptionManager.run();
 
         vm.startPrank(user1);
         stableCoin.mint();

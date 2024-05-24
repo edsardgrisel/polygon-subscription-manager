@@ -9,10 +9,10 @@ import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {DeployStableCoin} from "./DeployStableCoin.s.sol";
 
 contract DeploySubscriptionManager is Script {
-    function run() external returns (SubscriptionManager, ERC20, HelperConfig) {
+    function run() external returns (SubscriptionManager, StableCoin, HelperConfig) {
         // FOr local only
         DeployStableCoin deployStableCoin = new DeployStableCoin();
-        ERC20 acceptedToken = deployStableCoin.run();
+        StableCoin acceptedToken = deployStableCoin.run();
 
         HelperConfig helperConfig = new HelperConfig();
         (uint256 deployerKey, address ethPriceFeed) = helperConfig.activeNetworkConfig();
@@ -21,12 +21,13 @@ contract DeploySubscriptionManager is Script {
         SubscriptionManager subscriptionManager = new SubscriptionManager(ERC20(acceptedToken), ethPriceFeed);
         vm.stopBroadcast();
 
-        vm.startBroadcast(deployerKey);
-        subscriptionManager.registerUser(vm.envAddress("ANVIL_PUBLIC_KEY_ONE"));
-        subscriptionManager.registerUser(vm.envAddress("ANVIL_PUBLIC_KEY_TWO"));
+        // vm.startBroadcast(vm.envUint("ANVIL_PRIVATE_KEY_ONE"));
+        // acceptedToken.mint();
 
-        vm.stopBroadcast();
+        // acceptedToken.approve(address(subscriptionManager), 10000);
 
+        // subscriptionManager.activateSubscriptionWithStableCoin(vm.envAddress("ANVIL_PUBLIC_KEY_ZERO"));
+        // vm.stopBroadcast();
         return (subscriptionManager, acceptedToken, helperConfig);
     }
 }
