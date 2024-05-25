@@ -210,7 +210,7 @@ contract SubscriptionManager is Ownable {
 
         uint256 ethAmount = _getEthAmountFromUsd(subscription.price);
 
-        if (msg.value != ethAmount) {
+        if (msg.value < ethAmount) {
             revert SubscriptionManager__SubscriptionPriceMismatch();
         }
 
@@ -238,7 +238,11 @@ contract SubscriptionManager is Ownable {
         );
         _handleSetNextPaymentDay(admin, msg.sender, newSubscription.nextPaymentTime);
         _updateAdminEthEarnings(admin, ethAmount);
-
+        // Refund the excess ETH to the sender
+        uint256 refundAmount = msg.value - ethAmount;
+        if (refundAmount > 0) {
+            payable(msg.sender).transfer(refundAmount);
+        }
         // chainlink function to call backend to send email to user with confirmation and next payment date
     }
 
@@ -302,7 +306,7 @@ contract SubscriptionManager is Ownable {
 
         uint256 ethAmount = _getEthAmountFromUsd(subscription.price);
 
-        if (msg.value != ethAmount) {
+        if (msg.value < ethAmount) {
             revert SubscriptionManager__SubscriptionPriceMismatch();
         }
 
@@ -325,6 +329,12 @@ contract SubscriptionManager is Ownable {
         );
         _handleSetNextPaymentDay(admin, msg.sender, newSubscription.nextPaymentTime);
         _updateAdminEthEarnings(admin, ethAmount);
+
+        // Refund the excess ETH to the sender
+        uint256 refundAmount = msg.value - ethAmount;
+        if (refundAmount > 0) {
+            payable(msg.sender).transfer(refundAmount);
+        }
     }
 
     /**

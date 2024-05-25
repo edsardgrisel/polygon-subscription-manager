@@ -27,8 +27,8 @@ contract HelperConfig is Script {
 
     function getAvaxConfig() public view returns (NetworkConfig memory cardonaNetworkConfig) {
         cardonaNetworkConfig = NetworkConfig({
-            deployerKey: vm.envUint("ZKEVM_TESTNET_PRIVATE_KEY"),
-            ethPriceFeed: vm.envAddress("ZKEVM_TESTNET_ETHUSD_PRICE_FEED")
+            deployerKey: vm.envUint("FUJI_PRIVATE_KEY"),
+            ethPriceFeed: vm.envAddress("FUJI_AVAXUSD_PRICE_FEED")
         });
     }
 
