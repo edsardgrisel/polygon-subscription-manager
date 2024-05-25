@@ -8,7 +8,7 @@ import {
 } from "matchstick-as/assembly/index"
 import { Address, BigInt } from "@graphprotocol/graph-ts"
 import { AdminEthWithdrawalSuccessful } from "../generated/schema"
-import { AdminEthWithdrawalSuccessful as AdminEthWithdrawalSuccessfulEvent } from "../generated/Subscription Manager/Subscription Manager"
+import { AdminEthWithdrawalSuccessful as AdminEthWithdrawalSuccessfulEvent } from "../generated/SubscriptionManager/SubscriptionManager"
 import { handleAdminEthWithdrawalSuccessful } from "../src/subscription-manager"
 import { createAdminEthWithdrawalSuccessfulEvent } from "./subscription-manager-utils"
 

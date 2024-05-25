@@ -11,7 +11,7 @@ import {
   SubscriptionCancelled as SubscriptionCancelledEvent,
   UserRegistered as UserRegisteredEvent,
   UserUnregistered as UserUnregisteredEvent
-} from "../generated/Subscription Manager/Subscription Manager"
+} from "../generated/SubscriptionManager/SubscriptionManager"
 import {
   AdminEthWithdrawalSuccessful,
   AdminUsdWithdrawalSuccessful,

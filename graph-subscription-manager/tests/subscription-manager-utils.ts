@@ -13,7 +13,7 @@ import {
   SubscriptionCancelled,
   UserRegistered,
   UserUnregistered
-} from "../generated/Subscription Manager/Subscription Manager"
+} from "../generated/SubscriptionManager/SubscriptionManager"
 
 export function createAdminEthWithdrawalSuccessfulEvent(
   admin: Address,

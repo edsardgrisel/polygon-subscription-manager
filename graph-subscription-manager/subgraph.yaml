@@ -5,11 +5,11 @@ schema:
   file: ./schema.graphql
 dataSources:
   - kind: ethereum
-    name: Subscription Manager
+    name: SubscriptionManager
     network: fuji
     source:
       address: "0xEE10B0d6600dF29fda8680a5455dbb35d394F31A"
-      abi: Subscription Manager
+      abi: SubscriptionManager
       startBlock: 33356098
     mapping:
       kind: ethereum/events
@@ -29,8 +29,8 @@ dataSources:
         - UserRegistered
         - UserUnregistered
       abis:
-        - name: Subscription Manager
-          file: ./abis/Subscription Manager.json
+        - name: SubscriptionManager
+          file: ./abis/SubscriptionManager.json
       eventHandlers:
         - event: AdminEthWithdrawalSuccessful(indexed address,uint256)
           handler: handleAdminEthWithdrawalSuccessful
