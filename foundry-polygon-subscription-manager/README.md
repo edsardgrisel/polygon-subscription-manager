@@ -1,4 +1,4 @@
-# Polygon subscription manager
+# Avax subscription manager
 
 ### Description:
 This is a dapp that allows admins to manage their subscriptions and view analytics and users to subscribe to an admin's service in order to pay for the admins service (which can be on or off chain). E.g A gym (admin) can use this dapp to manage their subscriptions and gym users (user) can use this dapp to pay for their gym subscription.
@@ -33,3 +33,8 @@ This is a dapp that allows admins to manage their subscriptions and view analyti
 
 ### Extras
 All usd values are with 18 decimals. They are only ever converted to 6 decimals when handling transfers of usdt
+
+
+### TODO
+- Zero checks for all fields in subscription
+- admin != user checks

@@ -9,7 +9,7 @@ deploy:
 	@forge script script/DeploySubscriptionManager.s.sol:DeploySubscriptionManager $(NETWORK_ARGS) 
 
 deployFuji:
-	@forge script script/DeploySubscriptionManager.s.sol:DeploySubscriptionManager --chain-id 43113 --rpc-url $FUJI_RPC_URL --private-key $FUJI_PRIVATE_KEY --broadcast
+	@forge script script/DeploySubscriptionManager.s.sol:DeploySubscriptionManager --chain-id 43113 --rpc-url $(FUJI_RPC_URL) --private-key $(FUJI_PRIVATE_KEY) --broadcast
 
 
 

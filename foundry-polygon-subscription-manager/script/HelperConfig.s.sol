@@ -18,7 +18,7 @@ contract HelperConfig is Script {
     event HelperConfig__CreatedMockPriceFeed(address priceFeed);
 
     constructor() {
-        if (block.chainid == 1442) {
+        if (block.chainid == 43113) {
             activeNetworkConfig = getAvaxConfig();
         } else {
             activeNetworkConfig = getOrCreateAnvilEthConfig();

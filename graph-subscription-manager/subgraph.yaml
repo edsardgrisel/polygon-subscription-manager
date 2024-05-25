@@ -8,7 +8,7 @@ dataSources:
     name: SubscriptionManager
     network: fuji
     source:
-      address: "0xEE10B0d6600dF29fda8680a5455dbb35d394F31A"
+      address: "0x5E6638551dbfeE8E0596a58f8e7fF598cFD73Dda"
       abi: SubscriptionManager
       startBlock: 33356098
     mapping:
@@ -32,28 +32,28 @@ dataSources:
         - name: SubscriptionManager
           file: ./abis/SubscriptionManager.json
       eventHandlers:
-        - event: AdminEthWithdrawalSuccessful(indexed address,uint256)
-          handler: handleAdminEthWithdrawalSuccessful
-        - event: AdminUsdWithdrawalSuccessful(indexed address,uint256)
-          handler: handleAdminUsdWithdrawalSuccessful
-        - event: DayProcessed(uint256)
-          handler: handleDayProcessed
+        # - event: AdminEthWithdrawalSuccessful(indexed address,uint256)
+        #   handler: handleAdminEthWithdrawalSuccessful
+        # - event: AdminUsdWithdrawalSuccessful(indexed address,uint256)
+        #   handler: handleAdminUsdWithdrawalSuccessful
+        # - event: DayProcessed(uint256)
+        #   handler: handleDayProcessed
         - event: InactiveSubscriptionCreated(indexed address,indexed address,uint256,uint256,uint256)
           handler: handleInactiveSubscriptionCreated
-        - event: OwnerEthFeesWithdrawalSuccessful(indexed address,uint256)
-          handler: handleOwnerEthFeesWithdrawalSuccessful
-        - event: OwnerUsdFeesWithdrawalSuccessful(indexed address,uint256)
-          handler: handleOwnerUsdFeesWithdrawalSuccessful
-        - event: OwnershipTransferred(indexed address,indexed address)
-          handler: handleOwnershipTransferred
+        # - event: OwnerEthFeesWithdrawalSuccessful(indexed address,uint256)
+        #   handler: handleOwnerEthFeesWithdrawalSuccessful
+        # - event: OwnerUsdFeesWithdrawalSuccessful(indexed address,uint256)
+        #   handler: handleOwnerUsdFeesWithdrawalSuccessful
+        # - event: OwnershipTransferred(indexed address,indexed address)
+        #   handler: handleOwnershipTransferred
         - event: PaymentMade(indexed address,indexed address,uint256,uint256)
           handler: handlePaymentMade
         - event: SubscriptionActivated(indexed address,indexed address,uint256,uint256,uint256,uint256)
           handler: handleSubscriptionActivated
         - event: SubscriptionCancelled(indexed address,indexed address)
           handler: handleSubscriptionCancelled
-        - event: UserRegistered(indexed address)
-          handler: handleUserRegistered
-        - event: UserUnregistered(indexed address)
-          handler: handleUserUnregistered
+        # - event: UserRegistered(indexed address)
+        #   handler: handleUserRegistered
+        # - event: UserUnregistered(indexed address)
+        #   handler: handleUserUnregistered
       file: ./src/subscription-manager.ts

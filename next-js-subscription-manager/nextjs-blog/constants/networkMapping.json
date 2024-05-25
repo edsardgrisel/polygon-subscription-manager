@@ -1,1 +1,12 @@
-{"43113":{"SubscriptionManager":["0x00"]},"31337":{"SubscriptionManager":["0xCf7Ed3AccA5a467e9e704C703E8D87F634fB0Fc9"]}}
+{
+    "43113": {
+        "SubscriptionManager": [
+            "0x5E6638551dbfeE8E0596a58f8e7fF598cFD73Dda"
+        ]
+    },
+    "31337": {
+        "SubscriptionManager": [
+            "0xCf7Ed3AccA5a467e9e704C703E8D87F634fB0Fc9"
+        ]
+    }
+}
