@@ -23,17 +23,14 @@ export default function Home() {
     console.log("Withdrawing USD...")
     const address = data.data[0].inputResult
 
-    const paymentInterval = ethers.utils
-    .parseUnits(data.data[1].inputResult, "ether")
-    .toString()
+    const paymentIntervalInDays = data.data[1].inputResult
+    const paymentInterval = paymentIntervalInDays * 86400
 
-    const paymentAmount = ethers.utils
-    .parseUnits(data.data[1].inputResult, "ether")
-    .toString()
+    const paymentAmount = ethers.utils.parseUnits(data.data[1].inputResult, "ether").toString()
 
-    const duration = ethers.utils
-    .parseUnits(data.data[3].inputResult, "ether")
-    .toString()
+    const durationInDays = data.data[3].inputResult
+    const duration = durationInDays * 86400
+    
       
 
     const createSubscriptionOptions = {

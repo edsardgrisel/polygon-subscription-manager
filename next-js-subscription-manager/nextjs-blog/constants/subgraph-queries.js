@@ -30,7 +30,6 @@ const GET_ACTIVE_SUBSCRIPTIONS = gql`
             user
             paymentInterval
             price
-            duration
             nextPaymentTime
             }
     }

@@ -37,7 +37,7 @@ export default function Home() {
       params: {
         admin: subscription.admin,
       },
-      msgValue: ethers.utils.parseEther(subscription.price.toString())
+      msgValue: ethers.utils.parseEther("0.03")
     }
 
     await runContractFunction({
