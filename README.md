@@ -28,3 +28,19 @@ This is a dapp that allows admins to manage their subscriptions and view analyti
         -   Subscribe to an admin's service.
         -   Unsubscribe from an admin's service.
         -   View all subscription plans(and next payment deadlines).
+
+### Instructions:
+to run the front end:
+- Clone the repo
+- cd into nextjs-next-js-subscription-manager
+- cd into nextjs-blog
+- run `npm install`
+- run `npm run dev` and open in local host.
+- Connect with metamask.
+
+to run the smart contract:
+- Clone the repo
+- cd into foundry-polygon-subscription-manager
+- run `npm install`
+- run anvil chain with `anvil`
+- `make deploy` to deploy the smart contract

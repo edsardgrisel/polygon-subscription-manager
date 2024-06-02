@@ -36,8 +36,9 @@ export default function Home() {
         contractAddress: subscriptionManagerAddress,
         functionName: "makePaymentWithEth",
         params: {
-            admin: subscription.adminAddress,
+            admin: subscription.admin,
         },
+        msgValue: ethers.utils.parseEther("0.03")
     }
 
     await runContractFunction({
@@ -112,7 +113,7 @@ export default function Home() {
                               </th>
 
                               <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                Price
+                                Price USD
                               </th>
                               <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                 Next Payment Deadline
@@ -138,7 +139,7 @@ export default function Home() {
                                 </td>
 
                                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                  {activeSubscription.price}
+                                  {ethers.utils.formatUnits(activeSubscription.price).toString()} USD
                                 </td>
                                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                                   {activeSubscription.nextPaymentTime}
@@ -148,7 +149,7 @@ export default function Home() {
                                   <button className="text-xl border-blue-800 bg-blue-400 text-white rounded p-2" /*onClick={TODO}*/>Pay With USD</button>
                                 </td>
                                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                  <button className="text-xl border-blue-800 bg-blue-400 text-white rounded p-2" onClick={() => payWithAvax(activeSubscription)}>Pay with Avax</button>
+                                  <button className="text-xl border-blue-800 bg-blue-400 text-white rounded p-2" onClick={() => makeAvaxPayment(activeSubscription)}>Pay with Avax</button>
                                 </td>
 
                               </tr>
